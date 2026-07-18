@@ -1,115 +1,102 @@
-# XavierLabs IDE
+ï»¿<div align="center">
+  <img src="https://img.icons8.com/nolan/96/processor.png" alt="XavierLabs Logo" width="80" height="80">
+  <h1 align="center">XavierLabs IDE</h1>
+  
+  <p align="center">
+    <strong>A next-generation web-based embedded systems IDE for STE (Science, Technology & Engineering) students.</strong>
+    <br />
+    Learn electronics and firmware programming without expensive physical hardware.
+  </p>
 
-> A **web-based embedded systems IDE** for STE (Science, Technology & Engineering) students who want to learn electronics and firmware programming without expensive physical hardware.
+  <p align="center">
+    <a href="https://venstqs.github.io/Embedded-Studio-AI-/"><strong>Explore the Live App Â»</strong></a>
+    <br />
+    <br />
+    <a href="https://github.com/venstqs/Embedded-Studio-AI-/actions/workflows/deploy.yml"><img src="https://github.com/venstqs/Embedded-Studio-AI-/actions/workflows/deploy.yml/badge.svg" alt="Deploy Status" /></a>
+    <a href="https://reactjs.org/"><img src="https://img.shields.io/badge/React-19-blue.svg?logo=react" alt="React 19" /></a>
+    <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-Ready-blue.svg?logo=typescript" alt="TypeScript" /></a>
+    <a href="https://vitejs.dev/"><img src="https://img.shields.io/badge/Vite-Powered-purple.svg?logo=vite" alt="Vite" /></a>
+  </p>
+</div>
 
-[![Deploy Status](https://github.com/xavierlabs/ide/actions/workflows/deploy.yml/badge.svg)](https://github.com/xavierlabs/ide/actions/workflows/deploy.yml)
-
----
+<hr />
 
 ## What is XavierLabs IDE?
 
-XavierLabs IDE is a fully client-side, zero-backend browser application that simulates Arduino and ESP32 development environments. Students can:
+XavierLabs IDE is a beautifully designed, purely client-side browser application that simulates **Arduino** and **ESP32** development environments. Modeled with a **SpaceX-inspired dark aesthetic**, it feels extremely premium, fast, and lightweight.
 
-- **Write firmware** in a VS Code-inspired code editor with Arduino syntax highlighting
-- **Design circuits** on an interactive drag-and-drop canvas
-- **Simulate behavior** including LED glow, button presses, potentiometer readings, and DHT11 sensor data
-- **Debug** with an AI-powered hardware debugger that detects wiring mismatches and missing resistors
-- **Ask questions** to an AI Copilot powered by the Google Gemini API
-- **Analyze power consumption** and estimate battery life
+It empowers students to:
+- **Write firmware** in a VS Code-inspired code editor with syntax highlighting.
+- **Design circuits** on an interactive, drag-and-drop 2D canvas with photorealistic SVG components.
+- **Simulate behavior** including LED glowing (with real PWM support), button presses, potentiometer readings, and DHT11 sensor data.
+- **Analyze power consumption** dynamically based on live simulation state and PWM duty cycles.
+- **Debug & Learn** using an integrated **AI Copilot** powered by Google Gemini, capable of detecting wiring mismatches and offering step-by-step guidance.
+- **Load Starter Kits** with 1-click Circuit Templates like "Blink," "PWM Dimmer," and "DHT11 Sensor."
 
-Built for students who cannot afford physical components — everything runs 100% in the browser.
-
----
-
-## Features
-
-| Feature | Description |
-|---------|-------------|
-| ??? **Code Editor** | Arduino C++ editor with syntax highlighting, line numbers, tab drag-to-reorder |
-| ?? **Circuit Sandbox** | Drag-drop components, draw bezier wires, zoom in/out with scroll wheel |
-| ? **Simulation Engine** | Static analysis of code + schematic: LED states, pin voltages, wiring validation |
-| ?? **AI Copilot** | Gemini-powered chat assistant with full circuit + code context |
-| ?? **Power Analyzer** | Real-time current draw estimates and battery life forecasts |
-| ?? **Datasheets** | Quick reference cards for supported components |
-| ?? **Auto-Save** | Projects auto-save to `localStorage` — survive browser refresh |
-| ?? **Export/Import** | Export firmware `.hex`, pin map `.txt`, project `.json`, or documentation `.md` |
-| ?? **Keyboard Shortcuts** | `Ctrl+R` Run, `Ctrl+S` Save, `Escape` Cancel wiring |
+Everything runs **100% in your browser**â€”no backend, no downloads, no physical hardware required.
 
 ---
 
-## Supported Boards & Components
+## Key Features
 
-**Microcontrollers**
-- Arduino Uno R3 (ATmega328P)
-- ESP32 DevKit v1 (ESP-WROOM-32)
-
-**Components**
-- Red / Green LED
-- 220O Resistor
-- Push Button
-- 10kO Potentiometer
-- DHT11 Temperature & Humidity Sensor
-- Half-size Breadboard
+- **Advanced UI/UX**: Premium dark mode design, neon glows, glassmorphism, micro-animations, and a highly polished Workspace Explorer with inline file renaming.
+- **Dynamic Simulation Engine**: The IDE performs static analysis on your code and simulates real pin voltages. LEDs glow based on calculated duty cycles!
+- **AI Copilot Integration**: Ask questions, and the IDE feeds your exact wiring diagram and codebase directly into Google Gemini for highly contextual help.
+- **Power Analyzer**: See real-time current draw estimates (mA), USB limits, and battery life forecasts that respond dynamically to your running simulation.
+- **Circuit Templates**: Beautiful template cards allow you to instantly load predefined hardware setups and starter code.
+- **Zero-Backend Architecture**: State is persisted seamlessly to `localStorage`. Projects survive a browser refresh.
 
 ---
 
-## Getting Started
+## Supported Hardware
 
-### Run Locally
+### Microcontrollers
+- **Arduino Uno R3** (ATmega328P)
+- **ESP32 DevKit v1** (ESP-WROOM-32)
+
+### Components
+- **Red / Green LEDs**
+- **220 Ohm Resistor**
+- **Push Button**
+- **10k Ohm Potentiometer**
+- **DHT11 Temperature & Humidity Sensor**
+- **Half-size Breadboard**
+
+---
+
+## Getting Started Locally
+
+To run the project on your own machine:
 
 ```bash
-# Clone the repository
-git clone https://github.com/YOUR_USERNAME/xavierlabs-ide.git
-cd xavierlabs-ide
+# 1. Clone the repository
+git clone https://github.com/venstqs/Embedded-Studio-AI-.git
+cd Embedded-Studio-AI-
 
-# Install dependencies
+# 2. Install dependencies
 npm install
 
-# Start development server
+# 3. Start development server
 npm run dev
 ```
 
 Open [http://localhost:5173](http://localhost:5173) in your browser.
 
-### Build for Production
-
-```bash
-npm run build
-# Output is in the /dist folder
-```
-
 ---
 
 ## Configuration (Optional)
 
-The AI Copilot works without any API key using a built-in mock response engine. For full AI capabilities, set a Gemini API key in the **Settings** panel (gear icon in the top-right).
-
-### Firebase (Optional)
-
-Firebase is only needed if you plan to add cloud save/auth features. Create a `.env.local` file:
-
-```env
-VITE_FIREBASE_API_KEY=your_key_here
-VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=your_project
-VITE_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
-VITE_FIREBASE_MESSAGING_SENDER_ID=123456789
-VITE_FIREBASE_APP_ID=1:123456789:web:abc123
-```
-
-> ?? **Never commit `.env.local` to GitHub.** It is gitignored by default.
+The AI Copilot works out-of-the-box using a built-in mock response engine. To unlock **full AI capabilities**, simply grab a free Google Gemini API key and paste it into the **Settings** panel (gear icon in the top-right of the IDE).
 
 ---
 
-## Deploying to GitHub Pages
+## Deployment (GitHub Pages)
 
-This project includes a ready-to-use GitHub Actions workflow.
+This repository is equipped with a ready-to-use GitHub Actions workflow (`.github/workflows/deploy.yml`).
 
-1. Push to `main` branch
-2. Go to **Settings ? Pages ? Source ? GitHub Actions**
-3. The workflow will automatically build and deploy on every push
-
-The deploy workflow file is at [`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml).
+1. Push your code to the `main` branch.
+2. Ensure **GitHub Pages** is enabled in your repository settings and set to source from **GitHub Actions**.
+3. Your site will automatically build and deploy!
 
 ---
 
@@ -117,29 +104,16 @@ The deploy workflow file is at [`.github/workflows/deploy.yml`](./.github/workfl
 
 | Layer | Technology |
 |-------|------------|
-| Framework | React 19 + TypeScript |
-| Build Tool | Vite 8 |
-| Styling | Vanilla CSS (VS Code One Dark Pro theme) |
-| AI | Google Gemini 1.5 Flash API |
-| Auth/DB | Firebase (optional) |
-| Icons | Lucide React |
-| Fonts | Inter + Fira Code (Google Fonts) |
+| **Framework** | React 19 + TypeScript |
+| **Build Tool** | Vite 8 |
+| **Styling** | Vanilla CSS (Custom Design System) |
+| **AI Engine** | Google Gemini 1.5 Flash API |
+| **Icons** | Lucide React |
 
 ---
 
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Commit your changes: `git commit -m 'Add my feature'`
-4. Push and open a Pull Request
-
----
-
-## License
-
-MIT License — feel free to use this for educational purposes.
-
----
-
-*Built with ?? by XavierLabs — for STEM students everywhere.*
+<div align="center">
+  <i>Built for STE students everywhere. Design inspired by the future.</i>
+  <br>
+  <b>XavierLabs 2026</b>
+</div>
