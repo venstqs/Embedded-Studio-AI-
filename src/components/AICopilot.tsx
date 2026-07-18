@@ -82,11 +82,21 @@ Ask me a question or try one of the instant diagnostic checks below:`,
         },
       ]);
     } catch (err: any) {
+      const errMsg = (err.message || '').toString();
+      let helpfulTip = '';
+      if (errMsg.includes('API_KEY_INVALID') || errMsg.includes('API key not valid') || errMsg.includes('key is invalid')) {
+        helpfulTip = '\n\n> [!IMPORTANT]\n> **API Key Invalid:** Please check that you copied the key correctly from Google AI Studio. It usually starts with `AIzaSy...`';
+      } else if (errMsg.includes('CORS') || errMsg.includes('fetch') || errMsg.includes('Failed to fetch')) {
+        helpfulTip = '\n\n> [!WARNING]\n> **Network / CORS Issue:** Your browser was unable to reach the Google API endpoint. Verify your internet connection or check if a browser extension is blocking `generativelanguage.googleapis.com`.';
+      } else if (errMsg.includes('blocked') || errMsg.includes('limit')) {
+        helpfulTip = '\n\n> [!CAUTION]\n> **Blocked / Rate Limited:** Your API key has been restricted or has hit its rate limit. Double check your API usage console.';
+      }
+
       setMessages((prev) => [
         ...prev,
         {
           sender: 'ai',
-          text: `⚠️ **Error calling AI Engine**: ${err.message || 'Unknown network error. Check your API key and connection.'}`,
+          text: `⚠️ **Error calling Gemini API**: ${err.message || 'Unknown network error.'}${helpfulTip}`,
           timestamp: new Date().toLocaleTimeString(),
         },
       ]);

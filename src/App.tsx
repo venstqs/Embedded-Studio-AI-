@@ -21,7 +21,8 @@ import {
   Save,
   FilePlus,
   Layout,
-  Edit2
+  Edit2,
+  GraduationCap
 } from 'lucide-react';
 import './App.css';
 
@@ -37,6 +38,7 @@ import { PowerAnalyzer } from './components/PowerAnalyzer';
 import { Datasheets } from './components/Datasheets';
 import { SettingsModal } from './components/SettingsModal';
 import { CIRCUIT_TEMPLATES } from './services/circuitTemplates';
+import { TUTORIALS } from './services/learningMaterials';
 
 // Starter Codes
 const UNO_STARTER_CODE = `// Arduino Uno Blink Sketch
@@ -92,7 +94,7 @@ function App() {
     { name: 'config.h', content: '// Configure network variables here\n#define SSID "STEM-Lab-WiFi"\n#define PASS "12345678"', isActive: false },
   ]);
 
-  const [activeSidebarTab, setActiveSidebarTab] = useState<'files' | 'components' | 'copilot' | 'power' | 'datasheet' | 'templates'>('components');
+  const [activeSidebarTab, setActiveSidebarTab] = useState<'files' | 'components' | 'copilot' | 'power' | 'datasheet' | 'templates' | 'learning'>('components');
   const [activeBottomTab, setActiveBottomTab] = useState<'serial' | 'problems' | 'debugger'>('serial');
   
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -133,7 +135,9 @@ function App() {
     pinModes: {},
   });
 
-  const [apiKey, setApiKey] = useState('');
+  const [apiKey, setApiKey] = useState(() => {
+    return localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY || '';
+  });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [debuggerAlerts, setDebuggerAlerts] = useState<Array<{ id: string; type: 'warning' | 'error' | 'success'; message: string; source: 'schematic' | 'code' }>>([]);
   const [projectSaved, setProjectSaved] = useState(false);
@@ -143,7 +147,7 @@ function App() {
 
   // Load API Key and saved project from localStorage on first mount
   useEffect(() => {
-    const savedKey = localStorage.getItem('gemini_api_key');
+    const savedKey = localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
     if (savedKey) setApiKey(savedKey);
 
     // Try restoring saved project session
@@ -540,6 +544,14 @@ function App() {
             >
               <Layout size={18} />
             </button>
+
+            <button
+              onClick={() => handleActivityIconClick('learning')}
+              className={`activity-icon ${activeSidebarTab === 'learning' && isSidebarOpen ? 'active' : ''}`}
+              data-tooltip="Learning Materials"
+            >
+              <GraduationCap size={18} />
+            </button>
           </div>
 
           <div className="activity-bar-bottom">
@@ -565,6 +577,7 @@ function App() {
               {activeSidebarTab === 'power' && 'Power Consumption'}
               {activeSidebarTab === 'datasheet' && 'Datasheet Intelligence'}
               {activeSidebarTab === 'templates' && 'Circuit Templates'}
+              {activeSidebarTab === 'learning' && 'Learning Materials'}
             </span>
             <button className="panel-close-btn" onClick={() => setIsSidebarOpen(false)} data-tooltip="Collapse Panel">
               <ChevronLeft size={14} />
@@ -824,6 +837,53 @@ function App() {
                 </div>
               </div>
             )}
+
+            {activeSidebarTab === 'learning' && (
+              <div className="sidebar-content templates-panel">
+                <p className="templates-intro">
+                  Tutorials for Arduino and ESP32. Click <strong>Load Code</strong> to load the tutorial sketch into your active editor file.
+                </p>
+                <div className="templates-grid">
+                  {TUTORIALS.map((tut) => (
+                    <div key={tut.id} className="template-card">
+                      <div className="template-card-top">
+                        <span className="template-icon">📚</span>
+                        <div className="template-meta">
+                          <span className={`template-difficulty difficulty-${tut.difficulty.toLowerCase()}`}>
+                            {tut.difficulty}
+                          </span>
+                          <span className="template-board">{tut.board === 'uno' ? 'Uno' : 'ESP32'}</span>
+                        </div>
+                      </div>
+                      <h4 className="template-name">{tut.title}</h4>
+                      <p className="template-desc">{tut.description}</p>
+                      
+                      <div className="learning-steps-box" style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-secondary)' }}>
+                        <strong style={{ display: 'block', marginBottom: '4px', color: 'var(--text-primary)' }}>Wiring Steps:</strong>
+                        <ol style={{ paddingLeft: '14px', margin: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                          {tut.steps.map((step, idx) => (
+                            <li key={idx}>{step}</li>
+                          ))}
+                        </ol>
+                      </div>
+
+                      <button
+                        className="btn btn-primary template-load-btn"
+                        onClick={() => {
+                          if (selectedMCUModel !== tut.board) {
+                            handleBoardChange(tut.board);
+                          }
+                          // Load code into the active file
+                          setFiles(files.map(f => f.isActive ? { ...f, content: tut.code } : f));
+                        }}
+                      >
+                        ⚡ Load Code
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </aside>
 
@@ -899,6 +959,16 @@ function App() {
                 </button>
 
                 <div className="tab-actions-right">
+                  {activeBottomTab === 'serial' && isBottomPanelOpen && (
+                    <button
+                      className="btn btn-icon mr-2 text-[10px]"
+                      onClick={() => setSimulationState(prev => ({ ...prev, logs: [] }))}
+                      data-tooltip="Clear Serial Console"
+                      style={{ padding: '2px 6px', height: '20px', display: 'flex', alignItems: 'center' }}
+                    >
+                      Clear
+                    </button>
+                  )}
                   <button
                     className="panel-toggle-btn"
                     onClick={() => setIsBottomPanelOpen(!isBottomPanelOpen)}

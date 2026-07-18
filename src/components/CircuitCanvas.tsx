@@ -423,141 +423,148 @@ export const CircuitCanvas: React.FC<CircuitCanvasProps> = ({
 
               {/* RENDER SPECIFIC COMPONENTS */}
               
-              {/* 1. Arduino Uno R3 — Realistic PCB look */}
+              {/* 1. Arduino Uno R3 — SpaceX Dark PCB look */}
               {comp.type === 'mcu' && comp.model === 'uno' && (
                 <g>
-                  {/* PCB Base — Realistic Arduino green */}
-                  <rect width={comp.width} height={comp.height} rx="6" fill="#2d6a2d" stroke="#1a4a1a" strokeWidth="2" />
-                  <rect x="3" y="3" width={comp.width - 6} height={comp.height - 6} rx="5" fill="#1e5c1e" />
+                  {/* PCB Base — SpaceX style dark monochrome */}
+                  <rect width={comp.width} height={comp.height} rx="6" fill="#121212" stroke="#27272a" strokeWidth="2" />
+                  <rect x="3" y="3" width={comp.width - 6} height={comp.height - 6} rx="5" fill="#18181b" />
 
                   {/* USB-B Connector */}
-                  <rect x="4" y="28" width="22" height="20" rx="2" fill="#c0c0c0" stroke="#888" strokeWidth="1" />
-                  <rect x="7" y="31" width="16" height="14" rx="1" fill="#555" />
-                  <text x="15" y="55" fill="#4ade80" fontSize="6" fontFamily="monospace" textAnchor="middle">USB-B</text>
+                  <rect x="4" y="28" width="22" height="20" rx="2" fill="#2d2d30" stroke="#444" strokeWidth="1" />
+                  <rect x="7" y="31" width="16" height="14" rx="1" fill="#111" />
+                  <text x="15" y="55" fill="#a1a1aa" fontSize="6" fontFamily="monospace" textAnchor="middle">USB-B</text>
 
                   {/* DC Barrel Jack */}
-                  <circle cx="15" cy="105" r="10" fill="#333" stroke="#666" strokeWidth="1.5" />
-                  <circle cx="15" cy="105" r="5" fill="#888" />
-                  <circle cx="15" cy="105" r="2" fill="#222" />
-                  <text x="15" y="120" fill="#4ade80" fontSize="5" fontFamily="monospace" textAnchor="middle">DC IN</text>
+                  <circle cx="15" cy="105" r="10" fill="#222" stroke="#444" strokeWidth="1.5" />
+                  <circle cx="15" cy="105" r="5" fill="#333" />
+                  <circle cx="15" cy="105" r="2" fill="#111" />
+                  <text x="15" y="120" fill="#a1a1aa" fontSize="5" fontFamily="monospace" textAnchor="middle">DC IN</text>
 
                   {/* ATmega328P chip */}
-                  <rect x="88" y="62" width="106" height="32" rx="3" fill="#111" stroke="#333" strokeWidth="1" />
+                  <rect x="88" y="62" width="106" height="32" rx="3" fill="#09090b" stroke="#27272a" strokeWidth="1" />
                   {Array.from({ length: 14 }).map((_, i) => (
                     <g key={i}>
-                      <rect x={92 + i * 7} y={59} width={4} height={5} fill="#888" rx="0.5" />
-                      <rect x={92 + i * 7} y={94} width={4} height={5} fill="#888" rx="0.5" />
+                      <rect x={92 + i * 7} y={59} width={4} height={5} fill="#3f3f46" rx="0.5" />
+                      <rect x={92 + i * 7} y={94} width={4} height={5} fill="#3f3f46" rx="0.5" />
                     </g>
                   ))}
-                  <text x="141" y="80" fill="#4ade80" fontSize="7" fontFamily="monospace" textAnchor="middle">ATMEGA328P</text>
-                  <text x="141" y="89" fill="#2d6a2d" fontSize="5" fontFamily="monospace" textAnchor="middle">16MHz  5V</text>
+                  <text x="141" y="80" fill="#e4e4e7" fontSize="7" fontFamily="monospace" textAnchor="middle">ATMEGA328P</text>
+                  <text x="141" y="89" fill="#52525b" fontSize="5" fontFamily="monospace" textAnchor="middle">16MHz  5V</text>
 
                   {/* Voltage regulator */}
-                  <rect x="215" y="62" width="14" height="22" rx="1" fill="#333" stroke="#555" strokeWidth="1" />
-                  <rect x="217" y="55" width="3" height="9" fill="#888" />
-                  <rect x="221" y="55" width="3" height="9" fill="#888" />
-                  <rect x="225" y="55" width="3" height="9" fill="#888" />
-                  <text x="222" y="92" fill="#4ade80" fontSize="5" fontFamily="monospace" textAnchor="middle">7805</text>
+                  <rect x="215" y="62" width="14" height="22" rx="1" fill="#222" stroke="#333" strokeWidth="1" />
+                  <rect x="217" y="55" width="3" height="9" fill="#444" />
+                  <rect x="221" y="55" width="3" height="9" fill="#444" />
+                  <rect x="225" y="55" width="3" height="9" fill="#444" />
+                  <text x="222" y="92" fill="#71717a" fontSize="5" fontFamily="monospace" textAnchor="middle">7805</text>
 
                   {/* Crystal Oscillator */}
-                  <rect x="200" y="88" width="8" height="18" rx="3" fill="#c0c0c0" stroke="#888" strokeWidth="1" />
-                  <text x="204" y="112" fill="#4ade80" fontSize="4" fontFamily="monospace" textAnchor="middle">16M</text>
+                  <rect x="200" y="88" width="8" height="18" rx="3" fill="#2d2d30" stroke="#444" strokeWidth="1" />
+                  <text x="204" y="112" fill="#71717a" fontSize="4" fontFamily="monospace" textAnchor="middle">16M</text>
 
                   {/* Reset button */}
-                  <rect x="56" y="60" width="14" height="12" rx="2" fill="#222" stroke="#555" />
-                  <circle cx="63" cy="66" r="4" fill="#dc2626" />
-                  <text x="63" y="78" fill="#4ade80" fontSize="5" fontFamily="monospace" textAnchor="middle">RST</text>
+                  <rect x="56" y="60" width="14" height="12" rx="2" fill="#222" stroke="#444" />
+                  <circle cx="63" cy="66" r="4" fill="#3f3f46" />
+                  <text x="63" y="78" fill="#71717a" fontSize="5" fontFamily="monospace" textAnchor="middle">RST</text>
 
                   {/* Power LED */}
-                  <ellipse cx="58" cy="120" rx="3" ry="4" fill="#22c55e" opacity="0.9" />
-                  <text x="58" y="130" fill="#4ade80" fontSize="5" fontFamily="monospace" textAnchor="middle">PWR</text>
+                  <ellipse cx="58" cy="120" rx="3" ry="4" fill="#e4e4e7" opacity="0.9" />
+                  <text x="58" y="130" fill="#71717a" fontSize="5" fontFamily="monospace" textAnchor="middle">PWR</text>
 
                   {/* ICSP Header */}
-                  <rect x="154" y="100" width="16" height="14" rx="1" fill="#111" stroke="#444" />
+                  <rect x="154" y="100" width="16" height="14" rx="1" fill="#111" stroke="#333" />
                   {[0,1,2].map(r => [0,1].map(c => (
-                    <circle key={`${r}${c}`} cx={156 + c * 6} cy={103 + r * 4.5} r="1.5" fill="#888" />
+                    <circle key={`${r}${c}`} cx={156 + c * 6} cy={103 + r * 4.5} r="1.5" fill="#444" />
                   )))}
-                  <text x="162" y="120" fill="#4ade80" fontSize="5" fontFamily="monospace" textAnchor="middle">ICSP</text>
+                  <text x="162" y="120" fill="#71717a" fontSize="5" fontFamily="monospace" textAnchor="middle">ICSP</text>
 
                   {/* Silkscreen label */}
-                  <text x={comp.width / 2 + 10} y="120" fill="rgba(144,238,144,0.2)" fontSize="14" fontWeight="bold" fontFamily="sans-serif" textAnchor="middle">ARDUINO</text>
-                  <text x={comp.width / 2 + 10} y="133" fill="rgba(144,238,144,0.15)" fontSize="10" fontFamily="sans-serif" textAnchor="middle">UNO R3</text>
+                  <text x={comp.width / 2 + 10} y="120" fill="rgba(255,255,255,0.06)" fontSize="14" fontWeight="bold" fontFamily="sans-serif" textAnchor="middle">ARDUINO</text>
+                  <text x={comp.width / 2 + 10} y="133" fill="rgba(255,255,255,0.04)" fontSize="10" fontFamily="sans-serif" textAnchor="middle">UNO R3</text>
 
                   {/* Digital pin header bar */}
-                  <rect x="32" y="9" width="202" height="10" fill="#111" rx="2" />
+                  <rect x="32" y="9" width="202" height="10" fill="#09090b" rx="2" />
                   {Array.from({ length: 18 }).map((_, i) => (
-                    <rect key={i} x={35 + i * 11} y={7} width={5} height={5} rx="1" fill="#222" stroke="#555" strokeWidth="0.5" />
+                    <rect key={i} x={35 + i * 11} y={7} width={5} height={5} rx="1" fill="#18181b" stroke="#27272a" strokeWidth="0.5" />
                   ))}
 
                   {/* Analog + Power pin header bar */}
-                  <rect x="32" y="139" width="76" height="10" fill="#111" rx="2" />
-                  <rect x="120" y="139" width="76" height="10" fill="#111" rx="2" />
+                  <rect x="32" y="139" width="76" height="10" fill="#09090b" rx="2" />
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <rect key={`pwr-${i}`} x={35 + i * 11} y={142} width={5} height={5} rx="1" fill="#18181b" stroke="#27272a" strokeWidth="0.5" />
+                  ))}
+                  
+                  <rect x="120" y="139" width="76" height="10" fill="#09090b" rx="2" />
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <rect key={`analog-${i}`} x={123 + i * 11} y={142} width={5} height={5} rx="1" fill="#18181b" stroke="#27272a" strokeWidth="0.5" />
+                  ))}
                 </g>
               )}
 
-              {/* 2. ESP32 DevKit v1 — Realistic module appearance */}
+              {/* 2. ESP32 DevKit v1 — SpaceX Dark PCB look */}
               {comp.type === 'mcu' && comp.model === 'esp32' && (
                 <g>
-                  {/* PCB Base — Dark blue ESP32 DevKit */}
-                  <rect width={comp.width} height={comp.height} rx="6" fill="#1a1a2e" stroke="#16213e" strokeWidth="2" />
-                  <rect x="3" y="3" width={comp.width - 6} height={comp.height - 6} rx="5" fill="#0f3460" />
+                  {/* PCB Base — SpaceX style dark monochrome */}
+                  <rect width={comp.width} height={comp.height} rx="6" fill="#121212" stroke="#27272a" strokeWidth="2" />
+                  <rect x="3" y="3" width={comp.width - 6} height={comp.height - 6} rx="5" fill="#18181b" />
 
-                  {/* ESP-WROOM-32 module — silver metallic shield */}
-                  <rect x="22" y="15" width="96" height="68" rx="4" fill="#b8bcc0" stroke="#888" strokeWidth="1.5" />
-                  <rect x="24" y="17" width="92" height="64" rx="3" fill="#c8ccd0" />
+                  {/* ESP-WROOM-32 module — dark metallic shield */}
+                  <rect x="22" y="15" width="96" height="68" rx="4" fill="#2d2d30" stroke="#444" strokeWidth="1.5" />
+                  <rect x="24" y="17" width="92" height="64" rx="3" fill="#3f3f46" />
 
                   {/* Module inner chip area */}
-                  <rect x="35" y="22" width="70" height="38" rx="2" fill="#8a8f94" />
-                  <rect x="42" y="27" width="56" height="28" rx="1" fill="#3a3d42" />
+                  <rect x="35" y="22" width="70" height="38" rx="2" fill="#18181b" />
+                  <rect x="42" y="27" width="56" height="28" rx="1" fill="#09090b" />
 
                   {/* Chip marking */}
-                  <text x="70" y="44" fill="#aaa" fontSize="7" fontFamily="monospace" textAnchor="middle">ESP32-D0WDQ6</text>
-                  <text x="70" y="53" fill="#888" fontSize="5" fontFamily="monospace" textAnchor="middle">4MB FLASH</text>
+                  <text x="70" y="44" fill="#71717a" fontSize="7" fontFamily="monospace" textAnchor="middle">ESP32-D0WDQ6</text>
+                  <text x="70" y="53" fill="#52525b" fontSize="5" fontFamily="monospace" textAnchor="middle">4MB FLASH</text>
 
                   {/* WiFi Antenna trace pattern */}
-                  <path d="M 28 88 L 28 62 L 35 62" fill="none" stroke="#c8ccd0" strokeWidth="1.5" />
-                  <path d="M 26 78 L 22 78" fill="none" stroke="#c8ccd0" strokeWidth="1" />
-                  <path d="M 26 72 L 20 72" fill="none" stroke="#c8ccd0" strokeWidth="1" />
-                  <path d="M 26 66 L 22 66" fill="none" stroke="#c8ccd0" strokeWidth="1" />
+                  <path d="M 28 88 L 28 62 L 35 62" fill="none" stroke="#27272a" strokeWidth="1.5" />
+                  <path d="M 26 78 L 22 78" fill="none" stroke="#27272a" strokeWidth="1" />
+                  <path d="M 26 72 L 20 72" fill="none" stroke="#27272a" strokeWidth="1" />
+                  <path d="M 26 66 L 22 66" fill="none" stroke="#27272a" strokeWidth="1" />
 
                   {/* ESP-WROOM-32 label */}
-                  <text x="70" y="90" fill="#555" fontSize="7" fontWeight="bold" fontFamily="monospace" textAnchor="middle">ESP-WROOM-32</text>
+                  <text x="70" y="90" fill="#71717a" fontSize="7" fontWeight="bold" fontFamily="monospace" textAnchor="middle">ESP-WROOM-32</text>
 
-                  {/* Blue PCB trace lines */}
-                  <line x1="25" y1="110" x2="115" y2="110" stroke="#1e40af" strokeWidth="0.8" opacity="0.5" />
-                  <line x1="25" y1="130" x2="115" y2="130" stroke="#1e40af" strokeWidth="0.8" opacity="0.5" />
+                  {/* Monochrome trace lines */}
+                  <line x1="25" y1="110" x2="115" y2="110" stroke="#27272a" strokeWidth="0.8" opacity="0.3" />
+                  <line x1="25" y1="130" x2="115" y2="130" stroke="#27272a" strokeWidth="0.8" opacity="0.3" />
 
                   {/* Silicon die */}
-                  <rect x="42" y="110" width="56" height="42" rx="3" fill="#0f1a2d" stroke="#1e3a5f" />
-                  <rect x="50" y="116" width="40" height="30" rx="2" fill="#0a1218" />
+                  <rect x="42" y="110" width="56" height="42" rx="3" fill="#09090b" stroke="#27272a" />
+                  <rect x="50" y="116" width="40" height="30" rx="2" fill="#18181b" />
 
                   {/* EN + BOOT buttons */}
-                  <rect x="20" y="165" width="14" height="9" rx="2" fill="#1a1a2e" stroke="#444" />
-                  <circle cx="27" cy="169.5" r="3.5" fill="#374151" />
-                  <circle cx="27" cy="169.5" r="2" fill="#6b7280" />
-                  <text x="27" y="180" fill="#93c5fd" fontSize="6" textAnchor="middle" fontFamily="monospace">EN</text>
+                  <rect x="20" y="165" width="14" height="9" rx="2" fill="#2d2d30" stroke="#444" />
+                  <circle cx="27" cy="169.5" r="3.5" fill="#18181b" />
+                  <circle cx="27" cy="169.5" r="2" fill="#52525b" />
+                  <text x="27" y="180" fill="#71717a" fontSize="6" textAnchor="middle" fontFamily="monospace">EN</text>
 
-                  <rect x="106" y="165" width="14" height="9" rx="2" fill="#1a1a2e" stroke="#444" />
-                  <circle cx="113" cy="169.5" r="3.5" fill="#374151" />
-                  <circle cx="113" cy="169.5" r="2" fill="#6b7280" />
-                  <text x="113" y="180" fill="#93c5fd" fontSize="6" textAnchor="middle" fontFamily="monospace">BOOT</text>
+                  <rect x="106" y="165" width="14" height="9" rx="2" fill="#2d2d30" stroke="#444" />
+                  <circle cx="113" cy="169.5" r="3.5" fill="#18181b" />
+                  <circle cx="113" cy="169.5" r="2" fill="#52525b" />
+                  <text x="113" y="180" fill="#71717a" fontSize="6" textAnchor="middle" fontFamily="monospace">BOOT</text>
 
                   {/* Micro USB connector */}
-                  <rect x="50" y="185" width="40" height="12" rx="2" fill="#888" stroke="#666" />
-                  <rect x="54" y="187" width="32" height="8" rx="1" fill="#444" />
-                  <text x="70" y="205" fill="#93c5fd" fontSize="5.5" fontFamily="monospace" textAnchor="middle">microUSB</text>
+                  <rect x="50" y="185" width="40" height="12" rx="2" fill="#2d2d30" stroke="#444" />
+                  <rect x="54" y="187" width="32" height="8" rx="1" fill="#111" />
+                  <text x="70" y="205" fill="#71717a" fontSize="5.5" fontFamily="monospace" textAnchor="middle">microUSB</text>
 
                   {/* Silkscreen */}
-                  <text x="70" y="160" fill="rgba(147,197,253,0.12)" fontSize="13" fontWeight="bold" fontFamily="sans-serif" textAnchor="middle">ESP32</text>
+                  <text x="70" y="160" fill="rgba(255,255,255,0.06)" fontSize="13" fontWeight="bold" fontFamily="sans-serif" textAnchor="middle">ESP32</text>
 
                   {/* Pin header strips */}
-                  <rect x="8" y="25" width="10" height="165" fill="#0a0a14" rx="2" />
-                  <rect x="122" y="25" width="10" height="165" fill="#0a0a14" rx="2" />
-                  {/* Individual pin squares */}
-                  {Array.from({ length: 19 }).map((_, i) => (
+                  <rect x="8" y="25" width="10" height="172" fill="#09090b" rx="2" />
+                  <rect x="122" y="25" width="10" height="172" fill="#09090b" rx="2" />
+                  {/* Individual pin squares aligned with logical pins */}
+                  {Array.from({ length: 15 }).map((_, i) => (
                     <g key={i}>
-                      <rect x={9} y={28 + i * 8.5} width={8} height={6} rx="0.5" fill="#1e293b" stroke="#334155" strokeWidth="0.5" />
-                      <rect x={123} y={28 + i * 8.5} width={8} height={6} rx="0.5" fill="#1e293b" stroke="#334155" strokeWidth="0.5" />
+                      <rect x={9} y={32 + i * 11} width={8} height={6} rx="0.5" fill="#18181b" stroke="#27272a" strokeWidth="0.5" />
+                      <rect x={123} y={32 + i * 11} width={8} height={6} rx="0.5" fill="#18181b" stroke="#27272a" strokeWidth="0.5" />
                     </g>
                   ))}
                 </g>

@@ -210,6 +210,19 @@ export const EditorPanel: React.FC<EditorPanelProps> = ({
             <RotateCcw size={12} />
           </button>
 
+          <button
+            className="btn btn-icon"
+            onClick={() => {
+              if (activeFile) {
+                navigator.clipboard.writeText(activeFile.content);
+                alert('Code copied to clipboard!');
+              }
+            }}
+            data-tooltip="Copy Code"
+          >
+            <Code size={12} />
+          </button>
+
           <div className="pane-divider" style={{ width: '1px', height: '16px', backgroundColor: 'var(--border-color)', margin: '0 4px' }} />
 
           <button className="panel-toggle-btn" onClick={onToggleLayoutSwap} data-tooltip="Swap Panel Left/Right">

@@ -5,32 +5,32 @@
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'Fira Code', 'Courier New', Courier, monospace;
 
-  /* Premium VS Code One Dark Pro Palette */
-  --bg-primary: #282c34;          /* Editor background */
-  --bg-secondary: #21252b;        /* Sidebar background */
-  --bg-tertiary: #181a1f;         /* Activity bar & titlebar background */
-  --bg-active: #2c313c;           /* Focused selections */
-  --bg-hover: rgba(97, 175, 239, 0.08); /* Hover highlight */
+  /* SpaceX Premium Monochrome Palette */
+  --bg-primary: #09090b;          /* Pure deep black */
+  --bg-secondary: #121214;        /* Sleek sidebar dark */
+  --bg-tertiary: #18181b;         /* Activity bar & titlebar dark */
+  --bg-active: #27272a;           /* Selected panel tabs / list active */
+  --bg-hover: rgba(255, 255, 255, 0.05); /* Soft white hover */
   
-  --border-color: #181a1f;        /* Sharp dark panel separators */
-  --border-active: #528bff;       /* Active focus outlines */
+  --border-color: #27272a;        /* Sleek zinc borders */
+  --border-active: #ffffff;       /* Pure white active focus */
   
-  --text-primary: #abb2bf;        /* Light grey main font */
-  --text-secondary: #9da5b4;      /* Mid grey secondary labels */
-  --text-muted: #5c6370;          /* Dark grey comments & markers */
-  --text-dark: #1e1e24;           /* High contrast dark text */
+  --text-primary: #f4f4f5;        /* Crisp off-white */
+  --text-secondary: #a1a1aa;      /* Medium grey zinc labels */
+  --text-muted: #52525b;          /* Dark zinc comments */
+  --text-dark: #09090b;           /* Contrast dark */
   
-  /* Accent Colors (One Dark system) */
-  --color-accent: #61afef;        /* Soft Blue */
-  --color-accent-dim: rgba(97, 175, 239, 0.15);
-  --color-success: #98c379;       /* Soft Green */
-  --color-success-dim: rgba(152, 195, 121, 0.15);
-  --color-warning: #e5c07b;       /* Soft Yellow */
-  --color-warning-dim: rgba(229, 192, 123, 0.15);
-  --color-danger: #e06c75;        /* Soft Red */
-  --color-danger-dim: rgba(224, 108, 117, 0.15);
-  --color-ai: #c678dd;            /* Soft Purple */
-  --color-ai-dim: rgba(198, 120, 221, 0.15);
+  /* Accent Colors (Strictly Monochrome) */
+  --color-accent: #ffffff;        /* Pure White */
+  --color-accent-dim: rgba(255, 255, 255, 0.1);
+  --color-success: #e4e4e7;       /* Monochrome Success */
+  --color-success-dim: rgba(255, 255, 255, 0.05);
+  --color-warning: #a1a1aa;       
+  --color-warning-dim: rgba(255, 255, 255, 0.03);
+  --color-danger: #ffffff;        
+  --color-danger-dim: rgba(255, 255, 255, 0.1);
+  --color-ai: #f4f4f5;            
+  --color-ai-dim: rgba(255, 255, 255, 0.1);
 
   /* Layout Constants */
   --activity-bar-width: 64px;
@@ -39,8 +39,8 @@
   --statusbar-height: 28px;
   
   /* Shadow & Blur */
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
-  --glass-bg: #21252b;
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.9);
+  --glass-bg: #121214;
   --glass-blur: none;
 }
 
@@ -57,9 +57,6 @@ body, html, #root {
   height: 100%;
   overflow: hidden;
   background-color: var(--bg-primary);
-  background-image: 
-    radial-gradient(at 0% 0%, rgba(168, 85, 247, 0.08) 0px, transparent 50%),
-    radial-gradient(at 100% 100%, rgba(0, 240, 255, 0.06) 0px, transparent 50%);
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: 14px;
@@ -2408,35 +2405,21 @@ input, button, select, textarea {
 }
 
 .template-card {
-  background: linear-gradient(145deg, #1e293b, #0f172a);
-  border: 1px solid #334155;
-  border-radius: 12px;
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 8px;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
   position: relative;
   overflow: hidden;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.template-card::before {
-  content: "";
-  position: absolute;
-  top: 0; left: 0; right: 0; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(0, 240, 255, 0.3), transparent);
-  opacity: 0;
-  transition: opacity 0.3s;
+  transition: all 0.2s ease;
 }
 
 .template-card:hover {
-  border-color: #00f0ff;
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 240, 255, 0.15), 0 0 0 1px rgba(0, 240, 255, 0.2) inset;
-}
-
-.template-card:hover::before {
-  opacity: 1;
+  border-color: #ffffff;
+  background: #27272a;
 }
 
 .template-card-top {
@@ -2446,9 +2429,8 @@ input, button, select, textarea {
 }
 
 .template-icon {
-  font-size: 24px;
+  font-size: 20px;
   line-height: 1;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
 }
 
 .template-meta {
@@ -2460,53 +2442,51 @@ input, button, select, textarea {
 .template-difficulty {
   font-size: 9px;
   font-weight: 700;
-  padding: 4px 8px;
-  border-radius: 12px;
+  padding: 3px 6px;
+  border-radius: 4px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  box-shadow: inset 0 1px 1px rgba(255,255,255,0.1);
 }
 
 .difficulty-beginner {
-  background: rgba(16, 185, 129, 0.15);
-  color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  background: #27272a;
+  color: #f4f4f5;
+  border: 1px solid #3f3f46;
 }
 
 .difficulty-intermediate {
-  background: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  background: #3f3f46;
+  color: #f4f4f5;
+  border: 1px solid #52525b;
 }
 
 .difficulty-advanced {
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: #52525b;
+  color: #ffffff;
+  border: 1px solid #71717a;
 }
 
 .template-board {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: #1e293b;
-  color: #cbd5e1;
-  border: 1px solid #475569;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: #09090b;
+  color: #a1a1aa;
+  border: 1px solid #27272a;
   font-family: var(--font-mono);
 }
 
 .template-name {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
-  color: #f8fafc;
+  color: #ffffff;
   margin: 0;
-  letter-spacing: -0.01em;
 }
 
 .template-desc {
   font-size: 12px;
-  color: #94a3b8;
+  color: #a1a1aa;
   line-height: 1.5;
   margin: 0;
 }
@@ -2519,35 +2499,34 @@ input, button, select, textarea {
 }
 
 .template-tag {
-  font-size: 10px;
-  padding: 3px 8px;
+  font-size: 9px;
+  padding: 2px 6px;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.03);
-  color: #cbd5e1;
+  color: #a1a1aa;
   border: 1px solid rgba(255, 255, 255, 0.08);
   font-family: var(--font-mono);
-  transition: background 0.2s;
+  transition: all 0.2s;
 }
 
 .template-card:hover .template-tag {
-  background: rgba(0, 240, 255, 0.05);
-  border-color: rgba(0, 240, 255, 0.2);
-  color: #00f0ff;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
 }
 
 .template-load-btn {
   width: 100%;
   justify-content: center;
   margin-top: 8px;
-  font-size: 13px;
-  padding: 10px 16px;
-  border-radius: 8px;
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  background: linear-gradient(135deg, #0284c7, #2563eb);
-  color: white;
-  border: none;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+  background: #ffffff;
+  color: #09090b;
+  border: 1px solid #ffffff;
   transition: all 0.2s;
   cursor: pointer;
   display: flex;
@@ -2556,9 +2535,8 @@ input, button, select, textarea {
 }
 
 .template-load-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(0, 240, 255, 0.4);
-  background: linear-gradient(135deg, #0369a1, #1d4ed8);
+  background: #e4e4e7;
+  border-color: #e4e4e7;
 }
 
 .template-load-btn:active {

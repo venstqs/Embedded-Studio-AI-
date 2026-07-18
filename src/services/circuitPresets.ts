@@ -15,7 +15,7 @@ const createUnoPins = (componentId: string): Pin[] => {
       id: `${componentId}_pin_${name.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
       name,
       type: name === 'GND' ? 'ground' : 'digital',
-      x: 35 + index * 12,
+      x: 35 + index * 11,
       y: 15,
       parentComponentId: componentId,
     });
@@ -29,7 +29,7 @@ const createUnoPins = (componentId: string): Pin[] => {
       id: `${componentId}_pin_power_${index}`, // use index to avoid duplicate id for the two GND pins
       name,
       type: name.includes('GND') ? 'ground' : 'power',
-      x: 35 + index * 12,
+      x: 35 + index * 11,
       y: 145,
       parentComponentId: componentId,
     });
@@ -41,7 +41,7 @@ const createUnoPins = (componentId: string): Pin[] => {
       id: `${componentId}_pin_${name.toLowerCase()}`,
       name,
       type: 'analog',
-      x: 125 + index * 12,
+      x: 123 + index * 11,
       y: 145,
       parentComponentId: componentId,
     });
@@ -158,8 +158,8 @@ export const createComponentPreset = (type: ComponentType, model?: MCUModel): Co
         width: 44,
         height: 44,
         pins: [
-          { id: `${id}_pin_1`, name: '1', type: 'digital', x: 8, y: 22, parentComponentId: id },
-          { id: `${id}_pin_2`, name: '2', type: 'digital', x: 36, y: 22, parentComponentId: id }
+          { id: `${id}_pin_1`, name: '1', type: 'digital', x: 8, y: 52, parentComponentId: id },
+          { id: `${id}_pin_2`, name: '2', type: 'digital', x: 36, y: 52, parentComponentId: id }
         ],
         state: { isPressed: false }
       };
