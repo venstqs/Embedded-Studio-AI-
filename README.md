@@ -1,0 +1,145 @@
+# XavierLabs IDE
+
+> A **web-based embedded systems IDE** for STE (Science, Technology & Engineering) students who want to learn electronics and firmware programming without expensive physical hardware.
+
+[![Deploy Status](https://github.com/xavierlabs/ide/actions/workflows/deploy.yml/badge.svg)](https://github.com/xavierlabs/ide/actions/workflows/deploy.yml)
+
+---
+
+## What is XavierLabs IDE?
+
+XavierLabs IDE is a fully client-side, zero-backend browser application that simulates Arduino and ESP32 development environments. Students can:
+
+- **Write firmware** in a VS Code-inspired code editor with Arduino syntax highlighting
+- **Design circuits** on an interactive drag-and-drop canvas
+- **Simulate behavior** including LED glow, button presses, potentiometer readings, and DHT11 sensor data
+- **Debug** with an AI-powered hardware debugger that detects wiring mismatches and missing resistors
+- **Ask questions** to an AI Copilot powered by the Google Gemini API
+- **Analyze power consumption** and estimate battery life
+
+Built for students who cannot afford physical components — everything runs 100% in the browser.
+
+---
+
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| ??? **Code Editor** | Arduino C++ editor with syntax highlighting, line numbers, tab drag-to-reorder |
+| ?? **Circuit Sandbox** | Drag-drop components, draw bezier wires, zoom in/out with scroll wheel |
+| ? **Simulation Engine** | Static analysis of code + schematic: LED states, pin voltages, wiring validation |
+| ?? **AI Copilot** | Gemini-powered chat assistant with full circuit + code context |
+| ?? **Power Analyzer** | Real-time current draw estimates and battery life forecasts |
+| ?? **Datasheets** | Quick reference cards for supported components |
+| ?? **Auto-Save** | Projects auto-save to `localStorage` — survive browser refresh |
+| ?? **Export/Import** | Export firmware `.hex`, pin map `.txt`, project `.json`, or documentation `.md` |
+| ?? **Keyboard Shortcuts** | `Ctrl+R` Run, `Ctrl+S` Save, `Escape` Cancel wiring |
+
+---
+
+## Supported Boards & Components
+
+**Microcontrollers**
+- Arduino Uno R3 (ATmega328P)
+- ESP32 DevKit v1 (ESP-WROOM-32)
+
+**Components**
+- Red / Green LED
+- 220O Resistor
+- Push Button
+- 10kO Potentiometer
+- DHT11 Temperature & Humidity Sensor
+- Half-size Breadboard
+
+---
+
+## Getting Started
+
+### Run Locally
+
+```bash
+# Clone the repository
+git clone https://github.com/YOUR_USERNAME/xavierlabs-ide.git
+cd xavierlabs-ide
+
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173) in your browser.
+
+### Build for Production
+
+```bash
+npm run build
+# Output is in the /dist folder
+```
+
+---
+
+## Configuration (Optional)
+
+The AI Copilot works without any API key using a built-in mock response engine. For full AI capabilities, set a Gemini API key in the **Settings** panel (gear icon in the top-right).
+
+### Firebase (Optional)
+
+Firebase is only needed if you plan to add cloud save/auth features. Create a `.env.local` file:
+
+```env
+VITE_FIREBASE_API_KEY=your_key_here
+VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your_project
+VITE_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=123456789
+VITE_FIREBASE_APP_ID=1:123456789:web:abc123
+```
+
+> ?? **Never commit `.env.local` to GitHub.** It is gitignored by default.
+
+---
+
+## Deploying to GitHub Pages
+
+This project includes a ready-to-use GitHub Actions workflow.
+
+1. Push to `main` branch
+2. Go to **Settings ? Pages ? Source ? GitHub Actions**
+3. The workflow will automatically build and deploy on every push
+
+The deploy workflow file is at [`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml).
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Framework | React 19 + TypeScript |
+| Build Tool | Vite 8 |
+| Styling | Vanilla CSS (VS Code One Dark Pro theme) |
+| AI | Google Gemini 1.5 Flash API |
+| Auth/DB | Firebase (optional) |
+| Icons | Lucide React |
+| Fonts | Inter + Fira Code (Google Fonts) |
+
+---
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/my-feature`
+3. Commit your changes: `git commit -m 'Add my feature'`
+4. Push and open a Pull Request
+
+---
+
+## License
+
+MIT License — feel free to use this for educational purposes.
+
+---
+
+*Built with ?? by XavierLabs — for STEM students everywhere.*

@@ -1,0 +1,15 @@
+/* App-specific local styles (if any) */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.glow-cyan {
+  box-shadow: 0 0 15px var(--color-accent-dim);
+}
+
+.glow-purple {
+  box-shadow: 0 0 15px var(--color-ai-dim);
+}
