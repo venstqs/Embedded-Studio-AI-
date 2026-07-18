@@ -144,6 +144,48 @@ function App() {
   const [editingFile, setEditingFile] = useState<string | null>(null);
   const [renamingValue, setRenamingValue] = useState('');
 
+  // Resizable Layout states
+  const [editorWidth, setEditorWidth] = useState(480);
+  const [bottomHeight, setBottomHeight] = useState(220);
+
+  const startResizeWidth = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = editorWidth;
+    
+    const doResize = (moveEvent: MouseEvent) => {
+      const delta = layoutSwap ? (startX - moveEvent.clientX) : (moveEvent.clientX - startX);
+      setEditorWidth(Math.max(280, Math.min(window.innerWidth - 300, startWidth + delta)));
+    };
+    
+    const stopResize = () => {
+      window.removeEventListener('mousemove', doResize);
+      window.removeEventListener('mouseup', stopResize);
+    };
+    
+    window.addEventListener('mousemove', doResize);
+    window.addEventListener('mouseup', stopResize);
+  };
+
+  const startResizeHeight = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startHeight = bottomHeight;
+    
+    const doResize = (moveEvent: MouseEvent) => {
+      const delta = startY - moveEvent.clientY;
+      setBottomHeight(Math.max(120, Math.min(window.innerHeight - 150, startHeight + delta)));
+    };
+    
+    const stopResize = () => {
+      window.removeEventListener('mousemove', doResize);
+      window.removeEventListener('mouseup', stopResize);
+    };
+    
+    window.addEventListener('mousemove', doResize);
+    window.addEventListener('mouseup', stopResize);
+  };
+
   // Load API Key and saved project from localStorage on first mount
   useEffect(() => {
     const savedKey = localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
@@ -931,48 +973,70 @@ function App() {
           
           {/* Top Row Split Panel (Editor & Canvas) */}
           {(!closedPanes.editor || !closedPanes.canvas) && (
-            <div className="top-panes">
+            <div className="top-panes" style={{ flex: maximizedPane ? '1' : 'none', height: maximizedPane ? '100%' : `calc(100% - ${closedPanes.bottom ? 0 : (isBottomPanelOpen ? bottomHeight : 38)}px)` }}>
               {!closedPanes.editor && (maximizedPane === null || maximizedPane === 'editor') && (
-                <EditorPanel
-                  files={files}
-                  onUpdateFiles={setFiles}
-                  simulationState={simulationState}
-                  onStartSimulation={handleStartSimulation}
-                  onStopSimulation={handleStopSimulation}
-                  onResetSimulation={handleResetSimulation}
-                  selectedMCUModel={selectedMCUModel}
-                  layoutSwap={layoutSwap}
-                  onToggleLayoutSwap={() => setLayoutSwap(!layoutSwap)}
-                  isMaximized={maximizedPane === 'editor'}
-                  onToggleMaximize={() => setMaximizedPane(maximizedPane === 'editor' ? null : 'editor')}
-                  onClose={() => setClosedPanes(prev => ({ ...prev, editor: true }))}
+                <div style={{ width: (maximizedPane === 'editor' || closedPanes.canvas) ? '100%' : `${editorWidth}px`, flex: 'none', display: 'flex', flexDirection: 'column', height: '100%', order: layoutSwap ? 2 : 1 }}>
+                  <EditorPanel
+                    files={files}
+                    onUpdateFiles={setFiles}
+                    simulationState={simulationState}
+                    onStartSimulation={handleStartSimulation}
+                    onStopSimulation={handleStopSimulation}
+                    onResetSimulation={handleResetSimulation}
+                    selectedMCUModel={selectedMCUModel}
+                    layoutSwap={layoutSwap}
+                    onToggleLayoutSwap={() => setLayoutSwap(!layoutSwap)}
+                    isMaximized={maximizedPane === 'editor'}
+                    onToggleMaximize={() => setMaximizedPane(maximizedPane === 'editor' ? null : 'editor')}
+                    onClose={() => setClosedPanes(prev => ({ ...prev, editor: true }))}
+                  />
+                </div>
+              )}
+              
+              {!closedPanes.editor && !closedPanes.canvas && maximizedPane === null && (
+                <div 
+                  className="resizer-v" 
+                  onMouseDown={startResizeWidth} 
+                  style={{ order: 1.5 }}
                 />
               )}
               
               {!closedPanes.canvas && (maximizedPane === null || maximizedPane === 'canvas') && (
-                <CircuitCanvas
-                  components={components}
-                  wires={wires}
-                  selectedComponentId={selectedComponentId}
-                  activePinIdForWire={activePinIdForWire}
-                  simulationState={simulationState}
-                  onUpdateComponents={setComponents}
-                  onUpdateWires={setWires}
-                  onSelectComponent={setSelectedComponentId}
-                  onSetActivePinIdForWire={setActivePinIdForWire}
-                  layoutSwap={layoutSwap}
-                  onToggleLayoutSwap={() => setLayoutSwap(!layoutSwap)}
-                  isMaximized={maximizedPane === 'canvas'}
-                  onToggleMaximize={() => setMaximizedPane(maximizedPane === 'canvas' ? null : 'canvas')}
-                  onClose={() => setClosedPanes(prev => ({ ...prev, canvas: true }))}
-                />
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', order: layoutSwap ? 1 : 2 }}>
+                  <CircuitCanvas
+                    components={components}
+                    wires={wires}
+                    selectedComponentId={selectedComponentId}
+                    activePinIdForWire={activePinIdForWire}
+                    simulationState={simulationState}
+                    onUpdateComponents={setComponents}
+                    onUpdateWires={setWires}
+                    onSelectComponent={setSelectedComponentId}
+                    onSetActivePinIdForWire={setActivePinIdForWire}
+                    layoutSwap={layoutSwap}
+                    onToggleLayoutSwap={() => setLayoutSwap(!layoutSwap)}
+                    isMaximized={maximizedPane === 'canvas'}
+                    onToggleMaximize={() => setMaximizedPane(maximizedPane === 'canvas' ? null : 'canvas')}
+                    onClose={() => setClosedPanes(prev => ({ ...prev, canvas: true }))}
+                  />
+                </div>
               )}
             </div>
           )}
 
           {/* Bottom Tabs Panel */}
-          {!closedPanes.bottom && (
-            <div className={`bottom-pane ${isBottomPanelOpen ? '' : 'collapsed'}`}>
+          {!closedPanes.bottom && maximizedPane === null && (
+            <>
+              {isBottomPanelOpen && (
+                <div className="resizer-h" onMouseDown={startResizeHeight} />
+              )}
+              <div 
+                className={`bottom-pane ${isBottomPanelOpen ? '' : 'collapsed'}`}
+                style={{ 
+                  height: isBottomPanelOpen ? `${bottomHeight}px` : '38px', 
+                  flex: 'none' 
+                }}
+              >
               <div className="tab-headers">
                 <button
                   className={`tab-header ${activeBottomTab === 'serial' && isBottomPanelOpen ? 'active' : ''}`}
@@ -1098,6 +1162,7 @@ function App() {
                 </div>
               )}
             </div>
+            </>
           )}
         </section>
       </main>
