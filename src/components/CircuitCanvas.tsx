@@ -423,256 +423,453 @@ export const CircuitCanvas: React.FC<CircuitCanvasProps> = ({
 
               {/* RENDER SPECIFIC COMPONENTS */}
               
-              {/* 1. Arduino Uno R3 */}
+              {/* 1. Arduino Uno R3 — Realistic PCB look */}
               {comp.type === 'mcu' && comp.model === 'uno' && (
                 <g>
-                  {/* Board Body */}
-                  <rect width={comp.width} height={comp.height} rx="8" fill="#1e3a5f" stroke="#2563eb" strokeWidth="2" />
-                  <rect x="10" y="10" width={comp.width - 20} height={comp.height - 20} rx="6" fill="#1b304f" />
-                  
-                  {/* Microcontroller chip */}
-                  <rect x="90" y="70" width="100" height="25" rx="2" fill="#111827" stroke="#374151" />
-                  {/* Chip pin markings */}
+                  {/* PCB Base — Realistic Arduino green */}
+                  <rect width={comp.width} height={comp.height} rx="6" fill="#2d6a2d" stroke="#1a4a1a" strokeWidth="2" />
+                  <rect x="3" y="3" width={comp.width - 6} height={comp.height - 6} rx="5" fill="#1e5c1e" />
+
+                  {/* USB-B Connector */}
+                  <rect x="4" y="28" width="22" height="20" rx="2" fill="#c0c0c0" stroke="#888" strokeWidth="1" />
+                  <rect x="7" y="31" width="16" height="14" rx="1" fill="#555" />
+                  <text x="15" y="55" fill="#4ade80" fontSize="6" fontFamily="monospace" textAnchor="middle">USB-B</text>
+
+                  {/* DC Barrel Jack */}
+                  <circle cx="15" cy="105" r="10" fill="#333" stroke="#666" strokeWidth="1.5" />
+                  <circle cx="15" cy="105" r="5" fill="#888" />
+                  <circle cx="15" cy="105" r="2" fill="#222" />
+                  <text x="15" y="120" fill="#4ade80" fontSize="5" fontFamily="monospace" textAnchor="middle">DC IN</text>
+
+                  {/* ATmega328P chip */}
+                  <rect x="88" y="62" width="106" height="32" rx="3" fill="#111" stroke="#333" strokeWidth="1" />
                   {Array.from({ length: 14 }).map((_, i) => (
                     <g key={i}>
-                      <line x1={95 + i * 7} y1={66} x2={95 + i * 7} y2={70} stroke="#9ca3af" strokeWidth="1.5" />
-                      <line x1={95 + i * 7} y1={95} x2={95 + i * 7} y2={99} stroke="#9ca3af" strokeWidth="1.5" />
+                      <rect x={92 + i * 7} y={59} width={4} height={5} fill="#888" rx="0.5" />
+                      <rect x={92 + i * 7} y={94} width={4} height={5} fill="#888" rx="0.5" />
                     </g>
                   ))}
-                  <text x="140" y="86" fill="#4b5563" fontSize="8" fontFamily="monospace" textAnchor="middle">ATMEGA328P</text>
-                  
-                  {/* Voltage regulator and USB socket visuals */}
-                  <rect x="5" y="25" width="40" height="35" rx="3" fill="#374151" />
-                  <rect x="5" y="100" width="30" height="35" rx="2" fill="#0f172a" />
-                  
-                  {/* Board Labels */}
-                  <text x={comp.width / 2} y={120} fill="rgba(255,255,255,0.15)" fontSize="16" fontWeight="bold" fontFamily="sans-serif" textAnchor="middle">ARDUINO UNO R3</text>
+                  <text x="141" y="80" fill="#4ade80" fontSize="7" fontFamily="monospace" textAnchor="middle">ATMEGA328P</text>
+                  <text x="141" y="89" fill="#2d6a2d" fontSize="5" fontFamily="monospace" textAnchor="middle">16MHz  5V</text>
 
-                  {/* Pin Header Visual Backgrounds */}
-                  <rect x="30" y="10" width="202" height="12" fill="#111" rx="2" />
-                  <rect x="30" y="138" width="76" height="12" fill="#111" rx="2" />
-                  <rect x="120" y="138" width="76" height="12" fill="#111" rx="2" />
+                  {/* Voltage regulator */}
+                  <rect x="215" y="62" width="14" height="22" rx="1" fill="#333" stroke="#555" strokeWidth="1" />
+                  <rect x="217" y="55" width="3" height="9" fill="#888" />
+                  <rect x="221" y="55" width="3" height="9" fill="#888" />
+                  <rect x="225" y="55" width="3" height="9" fill="#888" />
+                  <text x="222" y="92" fill="#4ade80" fontSize="5" fontFamily="monospace" textAnchor="middle">7805</text>
+
+                  {/* Crystal Oscillator */}
+                  <rect x="200" y="88" width="8" height="18" rx="3" fill="#c0c0c0" stroke="#888" strokeWidth="1" />
+                  <text x="204" y="112" fill="#4ade80" fontSize="4" fontFamily="monospace" textAnchor="middle">16M</text>
+
+                  {/* Reset button */}
+                  <rect x="56" y="60" width="14" height="12" rx="2" fill="#222" stroke="#555" />
+                  <circle cx="63" cy="66" r="4" fill="#dc2626" />
+                  <text x="63" y="78" fill="#4ade80" fontSize="5" fontFamily="monospace" textAnchor="middle">RST</text>
+
+                  {/* Power LED */}
+                  <ellipse cx="58" cy="120" rx="3" ry="4" fill="#22c55e" opacity="0.9" />
+                  <text x="58" y="130" fill="#4ade80" fontSize="5" fontFamily="monospace" textAnchor="middle">PWR</text>
+
+                  {/* ICSP Header */}
+                  <rect x="154" y="100" width="16" height="14" rx="1" fill="#111" stroke="#444" />
+                  {[0,1,2].map(r => [0,1].map(c => (
+                    <circle key={`${r}${c}`} cx={156 + c * 6} cy={103 + r * 4.5} r="1.5" fill="#888" />
+                  )))}
+                  <text x="162" y="120" fill="#4ade80" fontSize="5" fontFamily="monospace" textAnchor="middle">ICSP</text>
+
+                  {/* Silkscreen label */}
+                  <text x={comp.width / 2 + 10} y="120" fill="rgba(144,238,144,0.2)" fontSize="14" fontWeight="bold" fontFamily="sans-serif" textAnchor="middle">ARDUINO</text>
+                  <text x={comp.width / 2 + 10} y="133" fill="rgba(144,238,144,0.15)" fontSize="10" fontFamily="sans-serif" textAnchor="middle">UNO R3</text>
+
+                  {/* Digital pin header bar */}
+                  <rect x="32" y="9" width="202" height="10" fill="#111" rx="2" />
+                  {Array.from({ length: 18 }).map((_, i) => (
+                    <rect key={i} x={35 + i * 11} y={7} width={5} height={5} rx="1" fill="#222" stroke="#555" strokeWidth="0.5" />
+                  ))}
+
+                  {/* Analog + Power pin header bar */}
+                  <rect x="32" y="139" width="76" height="10" fill="#111" rx="2" />
+                  <rect x="120" y="139" width="76" height="10" fill="#111" rx="2" />
                 </g>
               )}
 
-              {/* 2. ESP32 DevKit v1 */}
+              {/* 2. ESP32 DevKit v1 — Realistic module appearance */}
               {comp.type === 'mcu' && comp.model === 'esp32' && (
                 <g>
-                  {/* Board Body */}
-                  <rect width={comp.width} height={comp.height} rx="8" fill="#1e293b" stroke="#475569" strokeWidth="2" />
-                  <rect x="8" y="8" width={comp.width - 16} height={comp.height - 16} rx="6" fill="#0f172a" />
-                  
-                  {/* ESP32 module box */}
-                  <rect x="30" y="20" width="80" height="70" rx="4" fill="#334155" stroke="#475569" />
-                  <rect x="40" y="25" width="60" height="35" rx="2" fill="#1e293b" />
-                  {/* WiFi Antenna line */}
-                  <path d="M 45 65 L 95 65 M 45 70 L 95 70 M 55 65 L 55 80 M 65 65 L 65 80 M 75 65 L 75 80 M 85 65 L 85 80" stroke="#f1f5f9" strokeWidth="1" />
-                  <text x="70" y="47" fill="#cbd5e1" fontSize="10" fontWeight="bold" fontFamily="monospace" textAnchor="middle">ESP-WROOM-32</text>
-                  
-                  {/* Silicon core and buttons */}
-                  <rect x="50" y="110" width="40" height="40" rx="4" fill="#1e293b" />
-                  <circle cx="28" cy="170" r="5" fill="#475569" />
-                  <circle cx="112" cy="170" r="5" fill="#475569" />
-                  <text x="28" y="185" fill="#94a3b8" fontSize="6" textAnchor="middle">EN</text>
-                  <text x="112" y="185" fill="#94a3b8" fontSize="6" textAnchor="middle">BOOT</text>
+                  {/* PCB Base — Dark blue ESP32 DevKit */}
+                  <rect width={comp.width} height={comp.height} rx="6" fill="#1a1a2e" stroke="#16213e" strokeWidth="2" />
+                  <rect x="3" y="3" width={comp.width - 6} height={comp.height - 6} rx="5" fill="#0f3460" />
 
-                  {/* Brand logo */}
-                  <text x="70" y="180" fill="rgba(255,255,255,0.1)" fontSize="14" fontWeight="bold" fontFamily="sans-serif" textAnchor="middle">ESP32</text>
+                  {/* ESP-WROOM-32 module — silver metallic shield */}
+                  <rect x="22" y="15" width="96" height="68" rx="4" fill="#b8bcc0" stroke="#888" strokeWidth="1.5" />
+                  <rect x="24" y="17" width="92" height="64" rx="3" fill="#c8ccd0" />
 
-                  {/* Pin Headers */}
-                  <rect x="10" y="30" width="10" height="155" fill="#111" rx="2" />
-                  <rect x="120" y="30" width="10" height="155" fill="#111" rx="2" />
+                  {/* Module inner chip area */}
+                  <rect x="35" y="22" width="70" height="38" rx="2" fill="#8a8f94" />
+                  <rect x="42" y="27" width="56" height="28" rx="1" fill="#3a3d42" />
+
+                  {/* Chip marking */}
+                  <text x="70" y="44" fill="#aaa" fontSize="7" fontFamily="monospace" textAnchor="middle">ESP32-D0WDQ6</text>
+                  <text x="70" y="53" fill="#888" fontSize="5" fontFamily="monospace" textAnchor="middle">4MB FLASH</text>
+
+                  {/* WiFi Antenna trace pattern */}
+                  <path d="M 28 88 L 28 62 L 35 62" fill="none" stroke="#c8ccd0" strokeWidth="1.5" />
+                  <path d="M 26 78 L 22 78" fill="none" stroke="#c8ccd0" strokeWidth="1" />
+                  <path d="M 26 72 L 20 72" fill="none" stroke="#c8ccd0" strokeWidth="1" />
+                  <path d="M 26 66 L 22 66" fill="none" stroke="#c8ccd0" strokeWidth="1" />
+
+                  {/* ESP-WROOM-32 label */}
+                  <text x="70" y="90" fill="#555" fontSize="7" fontWeight="bold" fontFamily="monospace" textAnchor="middle">ESP-WROOM-32</text>
+
+                  {/* Blue PCB trace lines */}
+                  <line x1="25" y1="110" x2="115" y2="110" stroke="#1e40af" strokeWidth="0.8" opacity="0.5" />
+                  <line x1="25" y1="130" x2="115" y2="130" stroke="#1e40af" strokeWidth="0.8" opacity="0.5" />
+
+                  {/* Silicon die */}
+                  <rect x="42" y="110" width="56" height="42" rx="3" fill="#0f1a2d" stroke="#1e3a5f" />
+                  <rect x="50" y="116" width="40" height="30" rx="2" fill="#0a1218" />
+
+                  {/* EN + BOOT buttons */}
+                  <rect x="20" y="165" width="14" height="9" rx="2" fill="#1a1a2e" stroke="#444" />
+                  <circle cx="27" cy="169.5" r="3.5" fill="#374151" />
+                  <circle cx="27" cy="169.5" r="2" fill="#6b7280" />
+                  <text x="27" y="180" fill="#93c5fd" fontSize="6" textAnchor="middle" fontFamily="monospace">EN</text>
+
+                  <rect x="106" y="165" width="14" height="9" rx="2" fill="#1a1a2e" stroke="#444" />
+                  <circle cx="113" cy="169.5" r="3.5" fill="#374151" />
+                  <circle cx="113" cy="169.5" r="2" fill="#6b7280" />
+                  <text x="113" y="180" fill="#93c5fd" fontSize="6" textAnchor="middle" fontFamily="monospace">BOOT</text>
+
+                  {/* Micro USB connector */}
+                  <rect x="50" y="185" width="40" height="12" rx="2" fill="#888" stroke="#666" />
+                  <rect x="54" y="187" width="32" height="8" rx="1" fill="#444" />
+                  <text x="70" y="205" fill="#93c5fd" fontSize="5.5" fontFamily="monospace" textAnchor="middle">microUSB</text>
+
+                  {/* Silkscreen */}
+                  <text x="70" y="160" fill="rgba(147,197,253,0.12)" fontSize="13" fontWeight="bold" fontFamily="sans-serif" textAnchor="middle">ESP32</text>
+
+                  {/* Pin header strips */}
+                  <rect x="8" y="25" width="10" height="165" fill="#0a0a14" rx="2" />
+                  <rect x="122" y="25" width="10" height="165" fill="#0a0a14" rx="2" />
+                  {/* Individual pin squares */}
+                  {Array.from({ length: 19 }).map((_, i) => (
+                    <g key={i}>
+                      <rect x={9} y={28 + i * 8.5} width={8} height={6} rx="0.5" fill="#1e293b" stroke="#334155" strokeWidth="0.5" />
+                      <rect x={123} y={28 + i * 8.5} width={8} height={6} rx="0.5" fill="#1e293b" stroke="#334155" strokeWidth="0.5" />
+                    </g>
+                  ))}
                 </g>
               )}
 
-              {/* 3. LED Component */}
+              {/* 3. LED — Realistic bullet-dome LED */}
               {comp.type === 'led' && (() => {
                 const isOn = comp.state?.isOn;
-                const color = comp.name.includes('Green') ? 'green' : 'red';
-                const ledColor = color === 'green' ? '#00ff88' : '#ff4d4d';
-                const baseColor = color === 'green' ? '#047857' : '#be123c';
-                const filterId = color === 'green' ? 'url(#led-glow-green)' : 'url(#led-glow-red)';
-                
+                const brightness = comp.state?.brightness ?? 255;
+                const opacity = isOn ? (0.4 + (brightness / 255) * 0.6) : 1;
+                const color = comp.name.toLowerCase().includes('green') ? 'green'
+                  : comp.name.toLowerCase().includes('yellow') ? 'yellow'
+                  : comp.name.toLowerCase().includes('blue') ? 'blue'
+                  : 'red';
+
+                const palette: Record<string, { body: string; on: string; glow: string; filter: string }> = {
+                  red:    { body: '#7f1d1d', on: '#ff4444', glow: '#ff2222', filter: 'url(#led-glow-red)' },
+                  green:  { body: '#14532d', on: '#22ff88', glow: '#00ff66', filter: 'url(#led-glow-green)' },
+                  yellow: { body: '#78350f', on: '#ffd700', glow: '#ffcc00', filter: 'url(#led-glow-red)' },
+                  blue:   { body: '#1e3a5f', on: '#66aaff', glow: '#4499ff', filter: 'url(#led-glow-green)' },
+                };
+                const p = palette[color];
+                const bodyFill = isOn ? p.on : p.body;
+
                 return (
                   <g>
-                    {/* Metal Pins */}
-                    <line x1="13" y1="35" x2="13" y2="52" stroke="#94a3b8" strokeWidth="2.5" />
-                    <line x1="27" y1="35" x2="27" y2="52" stroke="#94a3b8" strokeWidth="2.5" />
-                    
-                    {/* Plastic holder */}
-                    <rect x="5" y="32" width="30" height="6" fill="#374151" rx="1" />
+                    {/* Metal leads */}
+                    <line x1="14" y1="42" x2="14" y2="56" stroke="#b0b8c0" strokeWidth="2" />
+                    <line x1="26" y1="42" x2="26" y2="56" stroke="#b0b8c0" strokeWidth="2" />
+                    {/* Shorter anode leg indicator */}
+                    <line x1="14" y1="50" x2="11" y2="50" stroke="#b0b8c0" strokeWidth="1.5" />
 
-                    {/* LED Dome Body */}
-                    <path
-                      d="M 5 32 L 5 20 A 15 15 0 0 1 35 20 L 35 32 Z"
-                      fill={isOn ? ledColor : baseColor}
-                      stroke={isOn ? '#fff' : 'rgba(0,0,0,0.3)'}
-                      strokeWidth="1.5"
-                      style={isOn ? { filter: filterId } : {}}
-                    />
-                    {/* Inner filament */}
-                    <path d="M 12 30 L 15 22 L 25 22 L 28 30" fill="none" stroke="#fff" opacity={isOn ? 0.9 : 0.2} strokeWidth="1" />
-                    <text x="20" y="-8" fill="#cbd5e1" fontSize="10" fontWeight="bold" textAnchor="middle">{comp.name}</text>
+                    {/* Lead spacer/base */}
+                    <rect x="7" y="38" width="26" height="5" rx="1" fill="#374151" />
+
+                    {/* LED cylindrical body — flat bottom */}
+                    <rect x="7" y="18" width="26" height="22" rx="0" fill={bodyFill}
+                      style={isOn ? { filter: p.filter, opacity } : { opacity: 0.85 }} />
+
+                    {/* LED dome cap */}
+                    <ellipse cx="20" cy="18" rx="13" ry="10"
+                      fill={isOn ? p.on : p.body}
+                      style={isOn ? { filter: p.filter, opacity } : { opacity: 0.85 }} />
+
+                    {/* Lens glint/reflection */}
+                    <ellipse cx="15" cy="13" rx="4" ry="3"
+                      fill="rgba(255,255,255,0.35)" />
+                    <ellipse cx="14" cy="12" rx="1.5" ry="1"
+                      fill="rgba(255,255,255,0.5)" />
+
+                    {/* Glow halo when on */}
+                    {isOn && (
+                      <ellipse cx="20" cy="18" rx="16" ry="13"
+                        fill={p.glow} opacity="0.12" style={{ filter: 'blur(4px)' }} />
+                    )}
+
+                    {/* Polarity marks */}
+                    <text x="13" y="54" fill="#64748b" fontSize="6" textAnchor="middle">+</text>
+                    <text x="27" y="54" fill="#64748b" fontSize="6" textAnchor="middle">-</text>
+
+                    <text x="20" y="-6" fill="#94a3b8" fontSize="9.5" fontWeight="600" textAnchor="middle">{comp.name}</text>
+                    {isOn && <text x="20" y="3" fill={p.glow} fontSize="7" textAnchor="middle">●</text>}
                   </g>
                 );
               })()}
 
-              {/* 4. Resistor Component */}
+              {/* 4. Resistor — Realistic ceramic body with proper color bands */}
               {comp.type === 'resistor' && (
                 <g>
-                  {/* Metal leads */}
-                  <line x1="0" y1="12" x2="15" y2="12" stroke="#94a3b8" strokeWidth="2" />
-                  <line x1="55" y1="12" x2="70" y2="12" stroke="#94a3b8" strokeWidth="2" />
-                  
-                  {/* Resistor Body */}
-                  <rect x="15" y="4" width="40" height="16" rx="4" fill="#e2e8f0" stroke="#94a3b8" strokeWidth="1.5" />
-                  
-                  {/* Color Bands (220 Ohm standard: Red, Red, Brown, Gold) */}
-                  <rect x="22" y="4" width="3.5" height="16" fill="#ef4444" />
-                  <rect x="29" y="4" width="3.5" height="16" fill="#ef4444" />
-                  <rect x="36" y="4" width="3.5" height="16" fill="#78350f" />
-                  <rect x="47" y="4" width="3.5" height="16" fill="#fbbf24" />
+                  {/* Metal leads with bend */}
+                  <line x1="0" y1="13" x2="13" y2="13" stroke="#b0b8c0" strokeWidth="2" />
+                  <line x1="57" y1="13" x2="70" y2="13" stroke="#b0b8c0" strokeWidth="2" />
 
-                  <text x="35" y="-8" fill="#cbd5e1" fontSize="9" fontWeight="500" textAnchor="middle">220 Ω</text>
+                  {/* Resistor ceramic body — beige/tan */}
+                  <rect x="13" y="5" width="44" height="16" rx="7" fill="#d4b896" stroke="#b8976e" strokeWidth="1" />
+                  {/* Inner lighter band on ends (realistic ceramic cap look) */}
+                  <rect x="13" y="5" width="7" height="16" rx="5" fill="#c8a87a" />
+                  <rect x="50" y="5" width="7" height="16" rx="5" fill="#c8a87a" />
+
+                  {/* Color bands: 220Ω = Red(2) Red(2) Brown(×10) Gold(5%) */}
+                  {/* Band 1: Red */}
+                  <rect x="21" y="5" width="4" height="16" fill="#dc2626" />
+                  {/* Band 2: Red */}
+                  <rect x="28" y="5" width="4" height="16" fill="#dc2626" />
+                  {/* Band 3: Brown (multiplier) */}
+                  <rect x="35" y="5" width="4" height="16" fill="#7c3f00" />
+                  {/* Band 4: Gold (tolerance) — spaced right */}
+                  <rect x="46" y="5" width="3" height="16" fill="#d4a017" />
+
+                  {/* Body sheen — top highlight */}
+                  <rect x="14" y="5" width="42" height="4" rx="3" fill="rgba(255,255,255,0.18)" />
+
+                  {/* Value label */}
+                  <text x="35" y="-5" fill="#94a3b8" fontSize="9" fontWeight="500" textAnchor="middle">220 Ω</text>
                 </g>
               )}
 
-              {/* 5. Push Button Component */}
+              {/* 5. Push Button — Realistic tactile switch */}
               {comp.type === 'button' && (() => {
                 const pressed = comp.state?.isPressed;
                 return (
                   <g>
-                    {/* Metal legs */}
-                    <line x1="0" y1="22" x2="8" y2="22" stroke="#94a3b8" strokeWidth="2" />
-                    <line x1="36" y1="22" x2="44" y2="22" stroke="#94a3b8" strokeWidth="2" />
-                    
-                    {/* Plastic Body Case */}
-                    <rect width="36" x="4" y="4" height="36" rx="4" fill="#374151" stroke="#1f2937" strokeWidth="2" />
-                    
-                    {/* Button Plunger */}
+                    {/* 4 metal legs */}
+                    <line x1="8" y1="44" x2="8" y2="56" stroke="#b0b8c0" strokeWidth="2" />
+                    <line x1="36" y1="44" x2="36" y2="56" stroke="#b0b8c0" strokeWidth="2" />
+                    <line x1="8" y1="8" x2="8" y2="0" stroke="#b0b8c0" strokeWidth="2" />
+                    <line x1="36" y1="8" x2="36" y2="0" stroke="#b0b8c0" strokeWidth="2" />
+
+                    {/* Plastic body — dark grey square */}
+                    <rect x="0" y="8" width="44" height="38" rx="3" fill="#1c1c1e" stroke="#3a3a3c" strokeWidth="1.5" />
+                    {/* Inner metal ring */}
+                    <circle cx="22" cy="26" r="16" fill="#2a2a2c" stroke="#444" strokeWidth="1" />
+                    {/* Outer plunger ring */}
+                    <circle cx="22" cy="26" r="12"
+                      fill={pressed ? '#1a1a1a' : '#252527'}
+                      stroke={pressed ? '#666' : '#555'}
+                      strokeWidth="1.5" />
+                    {/* Cap */}
                     <circle
                       cx="22"
-                      cy="22"
-                      r={pressed ? 10 : 12}
-                      fill={pressed ? '#ef4444' : '#b91c1c'}
-                      stroke="#450a0a"
-                      strokeWidth="1.5"
-                      style={{ cursor: 'pointer' }}
-                      onMouseDown={(e) => {
-                        e.stopPropagation();
-                        handleButtonPress(comp.id, true);
-                      }}
-                      onMouseUp={(e) => {
-                        e.stopPropagation();
-                        handleButtonPress(comp.id, false);
-                      }}
-                      onMouseLeave={() => {
-                        if (pressed) handleButtonPress(comp.id, false);
-                      }}
+                      cy={pressed ? 26 : 24}
+                      r="9"
+                      fill={pressed ? '#b91c1c' : '#ef4444'}
+                      stroke={pressed ? '#7f1d1d' : '#dc2626'}
+                      strokeWidth="1"
+                      style={{ cursor: 'pointer', transition: 'cy 0.05s' }}
+                      onMouseDown={(e) => { e.stopPropagation(); handleButtonPress(comp.id, true); }}
+                      onMouseUp={(e) => { e.stopPropagation(); handleButtonPress(comp.id, false); }}
+                      onMouseLeave={() => { if (pressed) handleButtonPress(comp.id, false); }}
                     />
-                    
-                    {/* Internal metal tabs */}
-                    <rect x="19" y="19" width="6" height="6" fill="#d1d5db" opacity="0.3" />
-                    <text x="22" y="-8" fill="#cbd5e1" fontSize="9" fontWeight="500" textAnchor="middle">Button</text>
+                    {/* Cap glint */}
+                    <ellipse cx="18" cy={pressed ? 22 : 21} rx="3" ry="2"
+                      fill="rgba(255,255,255,0.2)" />
+                    {/* Body corner screws */}
+                    <circle cx="4" cy="12" r="2" fill="#333" stroke="#555" strokeWidth="0.5" />
+                    <circle cx="40" cy="12" r="2" fill="#333" stroke="#555" strokeWidth="0.5" />
+                    <circle cx="4" cy="42" r="2" fill="#333" stroke="#555" strokeWidth="0.5" />
+                    <circle cx="40" cy="42" r="2" fill="#333" stroke="#555" strokeWidth="0.5" />
+
+                    <text x="22" y="-6" fill="#94a3b8" fontSize="9" fontWeight="500" textAnchor="middle">Button</text>
+                    {pressed && <text x="22" y="-6" fill="#22c55e" fontSize="9" fontWeight="700" textAnchor="middle">● PRESSED</text>}
                   </g>
                 );
               })()}
 
-              {/* 6. Potentiometer Component */}
+              {/* 6. Potentiometer — Realistic rotary dial */}
               {comp.type === 'potentiometer' && (() => {
-                const angle = ((comp.value || 0) / 100) * 270 - 135; // map 0-100 to -135 to 135 deg
+                const angle = ((comp.value || 0) / 100) * 270 - 135;
                 return (
                   <g>
-                    {/* Dial casing */}
-                    <circle cx="25" cy="25" r="22" fill="#1e293b" stroke="#475569" strokeWidth="2" />
-                    {/* Core wiper */}
-                    <circle cx="25" cy="25" r="16" fill="#334155" />
-                    {/* Dial pointer notch */}
+                    {/* Square body */}
+                    <rect x="0" y="0" width="50" height="50" rx="4" fill="#1c1c1e" stroke="#3a3a3c" strokeWidth="1.5" />
+
+                    {/* PCB mounting pads / corners */}
+                    <circle cx="4" cy="4" r="3" fill="#2a2a2c" stroke="#555" strokeWidth="0.5" />
+                    <circle cx="46" cy="4" r="3" fill="#2a2a2c" stroke="#555" strokeWidth="0.5" />
+                    <circle cx="4" cy="46" r="3" fill="#2a2a2c" stroke="#555" strokeWidth="0.5" />
+                    <circle cx="46" cy="46" r="3" fill="#2a2a2c" stroke="#555" strokeWidth="0.5" />
+
+                    {/* Outer dial ring */}
+                    <circle cx="25" cy="25" r="20" fill="#2d2d2f" stroke="#555" strokeWidth="2" />
+
+                    {/* Arc track */}
+                    <path d="M 9 40 A 18 18 0 1 1 41 40" fill="none" stroke="#374151" strokeWidth="3" strokeLinecap="round" />
+                    <path d="M 9 40 A 18 18 0 1 1 41 40" fill="none" stroke="#00f0ff" strokeWidth="2"
+                      strokeLinecap="round" opacity="0.5"
+                      strokeDasharray={`${(comp.value || 0) / 100 * 113} 113`} />
+
+                    {/* Tick marks around the dial */}
+                    {[0, 25, 50, 75, 100].map(v => {
+                      const a = (v / 100 * 270 - 135) * (Math.PI / 180);
+                      return (
+                        <line key={v}
+                          x1={25 + 17 * Math.cos(a)}
+                          y1={25 + 17 * Math.sin(a)}
+                          x2={25 + 20 * Math.cos(a)}
+                          y2={25 + 20 * Math.sin(a)}
+                          stroke="#6b7280" strokeWidth="1.5" strokeLinecap="round" />
+                      );
+                    })}
+
+                    {/* Knob cap */}
+                    <circle cx="25" cy="25" r="13" fill="#333" stroke="#555" strokeWidth="1" />
+                    <circle cx="25" cy="25" r="10" fill="#404040" />
+
+                    {/* Pointer line */}
                     <g transform={`rotate(${angle}, 25, 25)`}>
-                      <line x1="25" y1="25" x2="25" y2="11" stroke="#00f0ff" strokeWidth="3.5" strokeLinecap="round" />
+                      <line x1="25" y1="25" x2="25" y2="14"
+                        stroke="#00f0ff" strokeWidth="2.5" strokeLinecap="round" />
+                      <circle cx="25" cy="14" r="2" fill="#00f0ff" />
                     </g>
-                    
-                    {/* Dial track markings */}
-                    <path d="M 12 40 A 18 18 0 1 1 38 40" fill="none" stroke="#475569" strokeWidth="2" strokeDasharray="3 3" />
 
-                    {/* Legs casing */}
-                    <rect x="8" y="47" width="34" height="15" fill="#374151" rx="2" />
-                    {/* Component Leads */}
-                    <line x1="12" y1="52" x2="12" y2="62" stroke="#94a3b8" strokeWidth="2" />
-                    <line x1="25" y1="52" x2="25" y2="62" stroke="#94a3b8" strokeWidth="2" />
-                    <line x1="38" y1="52" x2="38" y2="62" stroke="#94a3b8" strokeWidth="2" />
+                    {/* Knurled grip lines */}
+                    {[-30, -15, 0, 15, 30].map(a => {
+                      const rad = (a + angle + 90) * (Math.PI / 180);
+                      return (
+                        <line key={a}
+                          x1={25 + 8 * Math.cos(rad)} y1={25 + 8 * Math.sin(rad)}
+                          x2={25 + 11 * Math.cos(rad)} y2={25 + 11 * Math.sin(rad)}
+                          stroke="#666" strokeWidth="1" opacity="0.5" />
+                      );
+                    })}
 
-                    <text x="25" y="-8" fill="#cbd5e1" fontSize="9" fontWeight="500" textAnchor="middle">Pot ({comp.value}%)</text>
+                    {/* Component legs */}
+                    <rect x="10" y="50" width="30" height="10" fill="#333" rx="2" />
+                    <line x1="14" y1="57" x2="14" y2="66" stroke="#b0b8c0" strokeWidth="2" />
+                    <line x1="25" y1="57" x2="25" y2="66" stroke="#b0b8c0" strokeWidth="2" />
+                    <line x1="36" y1="57" x2="36" y2="66" stroke="#b0b8c0" strokeWidth="2" />
+
+                    <text x="25" y="-7" fill="#94a3b8" fontSize="9" fontWeight="500" textAnchor="middle">Pot ({comp.value || 0}%)</text>
                   </g>
                 );
               })()}
 
-              {/* 7. DHT11 Sensor Component */}
-              {comp.type === 'dht11' && (
-                <g>
-                  {/* Grid Casing blue */}
-                  <rect width={comp.width} height={50} rx="4" fill="#0284c7" stroke="#0369a1" strokeWidth="2" />
-                  
-                  {/* Grille holes */}
-                  {Array.from({ length: 4 }).map((_, r) => (
-                    Array.from({ length: 4 }).map((_, c) => (
-                      <rect
-                        key={`${r}-${c}`}
-                        x={8 + c * 10}
-                        y={8 + r * 10}
-                        width="6"
-                        height="5"
-                        fill="#0c4a6e"
-                        rx="1"
-                      />
-                    ))
-                  ))}
+              {/* 7. DHT11 Sensor — Realistic sensor module */}
+              {comp.type === 'dht11' && (() => {
+                const temp = comp.state?.temperature ?? 24;
+                const hum = comp.state?.humidity ?? 45;
+                return (
+                  <g>
+                    {/* Outer housing — realistic light blue */}
+                    <rect width={comp.width} height="52" rx="5" fill="#2563eb" stroke="#1d4ed8" strokeWidth="1.5" />
 
-                  {/* Header connectors spacer */}
-                  <rect x="8" y="50" width="38" height="12" fill="#374151" />
-                  {/* Pins */}
-                  <line x1="13" y1="55" x2="13" y2="62" stroke="#94a3b8" strokeWidth="2" />
-                  <line x1="27" y1="55" x2="27" y2="62" stroke="#94a3b8" strokeWidth="2" />
-                  <line x1="41" y1="55" x2="41" y2="62" stroke="#94a3b8" strokeWidth="2" />
+                    {/* Sensor face mesh — grid of rounded slots */}
+                    {Array.from({ length: 3 }).map((_, r) =>
+                      Array.from({ length: 5 }).map((_, c) => (
+                        <rect
+                          key={`${r}-${c}`}
+                          x={5 + c * 9}
+                          y={6 + r * 13}
+                          width={6}
+                          height={9}
+                          fill="#1e40af"
+                          rx="2"
+                        />
+                      ))
+                    )}
 
-                  <text x="27" y="-8" fill="#cbd5e1" fontSize="9" fontWeight="500" textAnchor="middle">
-                    DHT11 ({comp.state?.temperature}°C, {comp.state?.humidity}%)
-                  </text>
-                </g>
-              )}
+                    {/* Top humidity label zone */}
+                    <rect x="0" y="44" width={comp.width} height="10" rx="0" fill="#1d4ed8" />
+                    <text x={comp.width / 2} y="51" fill="#bfdbfe" fontSize="6" fontFamily="monospace" textAnchor="middle">DHT11</text>
 
-              {/* 8. Breadboard */}
+                    {/* White PCB connector block */}
+                    <rect x="6" y="52" width={comp.width - 12} height="12" fill="#f8fafc" stroke="#cbd5e1" strokeWidth="1" rx="1" />
+
+                    {/* Pin labels */}
+                    <text x="14" y="61" fill="#374151" fontSize="5.5" textAnchor="middle" fontFamily="monospace">+</text>
+                    <text x="28" y="61" fill="#374151" fontSize="5.5" textAnchor="middle" fontFamily="monospace">D</text>
+                    <text x="42" y="61" fill="#374151" fontSize="5.5" textAnchor="middle" fontFamily="monospace">-</text>
+
+                    {/* Metal pins */}
+                    <line x1="14" y1="64" x2="14" y2="74" stroke="#b0b8c0" strokeWidth="2" />
+                    <line x1="28" y1="64" x2="28" y2="74" stroke="#b0b8c0" strokeWidth="2" />
+                    <line x1="42" y1="64" x2="42" y2="74" stroke="#b0b8c0" strokeWidth="2" />
+
+                    {/* Readout label */}
+                    <text x={comp.width / 2} y="-7" fill="#93c5fd" fontSize="9" fontWeight="600" textAnchor="middle">
+                      DHT11 {temp}°C {hum}%
+                    </text>
+                  </g>
+                );
+              })()}
+
+              {/* 8. Breadboard — Realistic with colored power rails */}
               {comp.type === 'breadboard' && (
                 <g>
-                  <rect width={comp.width} height={comp.height} rx="8" fill="#f8fafc" stroke="#cbd5e1" strokeWidth="3" />
-                  
-                  {/* Central gutter channel divider */}
-                  <rect x="10" y="65" width={comp.width - 20} height="10" fill="#e2e8f0" />
-                  
-                  {/* Draw power rail lines */}
-                  <line x1="15" y1="12" x2={comp.width - 15} y2="12" stroke="#ef4444" strokeWidth="1.5" />
-                  <line x1="15" y1="24" x2={comp.width - 15} y2="24" stroke="#2563eb" strokeWidth="1.5" />
-                  <line x1="15" y1="116" x2={comp.width - 15} y2="116" stroke="#ef4444" strokeWidth="1.5" />
-                  <line x1="15" y1="128" x2={comp.width - 15} y2="128" stroke="#2563eb" strokeWidth="1.5" />
+                  {/* Base — off-white PCB look */}
+                  <rect width={comp.width} height={comp.height} rx="6" fill="#e8ecf0" stroke="#c4cdd6" strokeWidth="2" />
+                  <rect x="2" y="2" width={comp.width - 4} height={comp.height - 4} rx="5" fill="#f0f4f7" />
 
-                  {/* Breadboard Hole Grids (Representational visual only) */}
+                  {/* Red power rail stripe top */}
+                  <rect x="10" y="6" width={comp.width - 20} height="21" rx="2" fill="#fff1f0" stroke="#fca5a5" strokeWidth="0.8" />
+                  <line x1="14" y1="13" x2={comp.width - 14} y2="13" stroke="#dc2626" strokeWidth="1.8" opacity="0.7" />
+                  <line x1="14" y1="22" x2={comp.width - 14} y2="22" stroke="#1d4ed8" strokeWidth="1.8" opacity="0.7" />
+                  <text x="8" y="14" fill="#dc2626" fontSize="7" fontWeight="bold" fontFamily="monospace">+</text>
+                  <text x="8" y="23" fill="#1d4ed8" fontSize="7" fontWeight="bold" fontFamily="monospace">-</text>
+
+                  {/* Central gutter */}
+                  <rect x="10" y="65" width={comp.width - 20} height="10" fill="#d1d9e0" rx="2" />
+                  <text x={comp.width / 2} y="73" fill="#94a3b8" fontSize="6" textAnchor="middle" fontFamily="monospace">A B C D E · F G H I J</text>
+
+                  {/* Blue power rail stripe bottom */}
+                  <rect x="10" y="113" width={comp.width - 20} height="21" rx="2" fill="#eff6ff" stroke="#93c5fd" strokeWidth="0.8" />
+                  <line x1="14" y1="120" x2={comp.width - 14} y2="120" stroke="#dc2626" strokeWidth="1.8" opacity="0.7" />
+                  <line x1="14" y1="129" x2={comp.width - 14} y2="129" stroke="#1d4ed8" strokeWidth="1.8" opacity="0.7" />
+                  <text x="8" y="121" fill="#dc2626" fontSize="7" fontWeight="bold" fontFamily="monospace">+</text>
+                  <text x="8" y="130" fill="#1d4ed8" fontSize="7" fontWeight="bold" fontFamily="monospace">-</text>
+
+                  {/* Hole grid — upper section */}
                   {Array.from({ length: 30 }).map((_, col) => {
                     const cx = 25 + col * 15;
                     return (
                       <g key={col}>
-                        {/* Upper grid */}
-                        <circle cx={cx} cy="38" r="1.5" fill="#475569" />
-                        <circle cx={cx} cy="48" r="1.5" fill="#475569" />
-                        <circle cx={cx} cy="58" r="1.5" fill="#475569" />
-                        {/* Lower grid */}
-                        <circle cx={cx} cy="82" r="1.5" fill="#475569" />
-                        <circle cx={cx} cy="92" r="1.5" fill="#475569" />
-                        <circle cx={cx} cy="102" r="1.5" fill="#475569" />
+                        {[36, 45, 54].map(cy => (
+                          <circle key={cy} cx={cx} cy={cy} r="2.2"
+                            fill="#cdd5de" stroke="#b0bec9" strokeWidth="0.8" />
+                        ))}
+                        {[78, 87, 96].map(cy => (
+                          <circle key={cy} cx={cx} cy={cy} r="2.2"
+                            fill="#cdd5de" stroke="#b0bec9" strokeWidth="0.8" />
+                        ))}
                       </g>
                     );
                   })}
-                  
-                  <text x={comp.width / 2} y="137" fill="#94a3b8" fontSize="8" fontFamily="sans-serif" textAnchor="middle">HALF-SIZE BREADBOARD</text>
+
+                  {/* Row number guides every 5 columns */}
+                  {[1, 5, 10, 15, 20, 25, 30].map(n => (
+                    <text key={n} x={25 + (n - 1) * 15} y="108" fill="#94a3b8" fontSize="5.5"
+                      fontFamily="monospace" textAnchor="middle">{n}</text>
+                  ))}
+
+                  <text x={comp.width / 2} y="143" fill="#94a3b8" fontSize="7.5" fontFamily="monospace" textAnchor="middle" fontWeight="500">HALF-SIZE BREADBOARD · 400 POINTS</text>
                 </g>
               )}
 

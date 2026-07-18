@@ -1,15 +1,17 @@
 import React from 'react';
 import { Battery, AlertTriangle, ShieldCheck } from 'lucide-react';
-import type { Component } from '../types/circuit';
+import type { Component, SimulationState } from '../types/circuit';
 
 interface PowerAnalyzerProps {
   components: Component[];
   mcuModel: 'uno' | 'esp32';
+  simulationState: SimulationState;
 }
 
 export const PowerAnalyzer: React.FC<PowerAnalyzerProps> = ({
   components,
   mcuModel,
+  simulationState,
 }) => {
   const getBaseCurrent = () => {
     if (mcuModel === 'esp32') {
@@ -19,28 +21,32 @@ export const PowerAnalyzer: React.FC<PowerAnalyzerProps> = ({
   };
 
   const calculateTotalCurrent = () => {
+    // If not simulating, we only draw base idle current of the board
     let current = getBaseCurrent();
 
-    components.forEach((comp) => {
-      if (comp.type === 'led' && comp.state?.isOn) {
-        current += 15; // LED active draws ~15mA
-      }
-      if (comp.type === 'dht11') {
-        current += 1.5; // DHT11 active draws ~1.5mA
-      }
-      if (comp.type === 'potentiometer') {
-        current += 0.33; // 3.3V / 10k resistance draws ~0.33mA
-      }
-      if (comp.type === 'button' && comp.state?.isPressed) {
-        current += 0.5; // press closing draws minimal load
-      }
-    });
+    if (simulationState.isPlaying) {
+      components.forEach((comp) => {
+        if (comp.type === 'led' && comp.state?.isOn) {
+          const duty = comp.state?.brightness !== undefined ? (comp.state.brightness / 255) : 1;
+          current += (20 * duty); // up to 20mA per LED
+        }
+        if (comp.type === 'dht11') {
+          current += 1.5; // DHT11 active draws ~1.5mA
+        }
+        if (comp.type === 'potentiometer') {
+          current += 0.33; // 3.3V / 10k resistance draws ~0.33mA
+        }
+        if (comp.type === 'button' && comp.state?.isPressed) {
+          current += 0.5; // minimal load
+        }
+      });
+    }
 
     return parseFloat(current.toFixed(2));
   };
 
   const totalCurrent = calculateTotalCurrent();
-  const limitCurrent = 500; // Standard USB current limit (500mA)
+  const limitCurrent = mcuModel === 'uno' ? 500 : 800; // Uno ~500mA, ESP32 USB ~800mA
   const percentOfLimit = Math.min(100, (totalCurrent / limitCurrent) * 100);
 
   const batteries = [
@@ -71,9 +77,14 @@ export const PowerAnalyzer: React.FC<PowerAnalyzerProps> = ({
     <div className="power-container">
 
       {/* Main current gauge */}
-      <div className="power-gauge-card">
+      <div className={`power-gauge-card ${simulationState.isPlaying ? 'ring-1 ring-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.15)] transition-all' : ''}`}>
         <div className="power-gauge-draw">
-          <span className="power-gauge-label">Estimated Current Draw</span>
+          <span className="power-gauge-label flex items-center gap-2">
+            Estimated Current Draw
+            {simulationState.isPlaying && (
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+            )}
+          </span>
           <div className="power-gauge-value font-mono">
             <span>{totalCurrent}</span>
             <span className="power-gauge-unit">mA</span>

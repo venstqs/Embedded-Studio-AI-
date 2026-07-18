@@ -19,7 +19,9 @@ import {
   ChevronUp,
   X,
   Save,
-  FilePlus
+  FilePlus,
+  Layout,
+  Edit2
 } from 'lucide-react';
 import './App.css';
 
@@ -34,6 +36,7 @@ import { AICopilot } from './components/AICopilot';
 import { PowerAnalyzer } from './components/PowerAnalyzer';
 import { Datasheets } from './components/Datasheets';
 import { SettingsModal } from './components/SettingsModal';
+import { CIRCUIT_TEMPLATES } from './services/circuitTemplates';
 
 // Starter Codes
 const UNO_STARTER_CODE = `// Arduino Uno Blink Sketch
@@ -89,7 +92,7 @@ function App() {
     { name: 'config.h', content: '// Configure network variables here\n#define SSID "STEM-Lab-WiFi"\n#define PASS "12345678"', isActive: false },
   ]);
 
-  const [activeSidebarTab, setActiveSidebarTab] = useState<'files' | 'components' | 'copilot' | 'power' | 'datasheet'>('components');
+  const [activeSidebarTab, setActiveSidebarTab] = useState<'files' | 'components' | 'copilot' | 'power' | 'datasheet' | 'templates'>('components');
   const [activeBottomTab, setActiveBottomTab] = useState<'serial' | 'problems' | 'debugger'>('serial');
   
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -134,6 +137,9 @@ function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [debuggerAlerts, setDebuggerAlerts] = useState<Array<{ id: string; type: 'warning' | 'error' | 'success'; message: string; source: 'schematic' | 'code' }>>([]);
   const [projectSaved, setProjectSaved] = useState(false);
+  
+  const [editingFile, setEditingFile] = useState<string | null>(null);
+  const [renamingValue, setRenamingValue] = useState('');
 
   // Load API Key and saved project from localStorage on first mount
   useEffect(() => {
@@ -526,6 +532,14 @@ function App() {
             >
               <BookOpen size={18} />
             </button>
+
+            <button
+              onClick={() => handleActivityIconClick('templates')}
+              className={`activity-icon ${activeSidebarTab === 'templates' && isSidebarOpen ? 'active' : ''}`}
+              data-tooltip="Circuit Templates"
+            >
+              <Layout size={18} />
+            </button>
           </div>
 
           <div className="activity-bar-bottom">
@@ -550,6 +564,7 @@ function App() {
               {activeSidebarTab === 'copilot' && 'AI Copilot'}
               {activeSidebarTab === 'power' && 'Power Consumption'}
               {activeSidebarTab === 'datasheet' && 'Datasheet Intelligence'}
+              {activeSidebarTab === 'templates' && 'Circuit Templates'}
             </span>
             <button className="panel-close-btn" onClick={() => setIsSidebarOpen(false)} data-tooltip="Collapse Panel">
               <ChevronLeft size={14} />
@@ -588,12 +603,50 @@ function App() {
                     key={file.name}
                     className={`sidebar-file-row ${file.isActive ? 'active' : ''}`}
                     onClick={() => {
-                      setFiles(files.map(f => ({ ...f, isActive: f.name === file.name })));
+                      if (editingFile !== file.name) {
+                        setFiles(files.map(f => ({ ...f, isActive: f.name === file.name })));
+                      }
                     }}
                   >
                     <FolderOpen size={13} className={file.isActive ? 'text-cyan-400' : 'text-slate-500'} />
-                    <span className="flex-1 truncate">{file.name}</span>
-                    {files.length > 1 && (
+                    {editingFile === file.name ? (
+                      <input
+                        type="text"
+                        className="flex-1 bg-slate-800 text-xs text-white px-1 py-0.5 rounded outline-none border border-cyan-500"
+                        value={renamingValue}
+                        onChange={(e) => setRenamingValue(e.target.value)}
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            if (renamingValue && renamingValue !== file.name && !files.find(f => f.name === renamingValue)) {
+                              setFiles(files.map(f => f.name === file.name ? { ...f, name: renamingValue } : f));
+                            }
+                            setEditingFile(null);
+                          } else if (e.key === 'Escape') {
+                            setEditingFile(null);
+                          }
+                        }}
+                        onBlur={() => setEditingFile(null)}
+                      />
+                    ) : (
+                      <span className="flex-1 truncate">{file.name}</span>
+                    )}
+                    
+                    {!editingFile && (
+                      <button
+                        className="file-close-btn opacity-0 group-hover:opacity-100 hover:text-cyan-400 mr-1"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingFile(file.name);
+                          setRenamingValue(file.name);
+                        }}
+                        data-tooltip="Rename file"
+                      >
+                        <Edit2 size={12} />
+                      </button>
+                    )}
+
+                    {files.length > 1 && !editingFile && (
                       <button
                         className="file-close-btn"
                         onClick={(e) => {
@@ -607,7 +660,7 @@ function App() {
                         }}
                         data-tooltip="Close file"
                       >
-                        <X size={10} />
+                        <X size={12} />
                       </button>
                     )}
                   </div>
@@ -718,11 +771,58 @@ function App() {
               <PowerAnalyzer
                 components={components}
                 mcuModel={selectedMCUModel}
+                simulationState={simulationState}
               />
             )}
 
             {activeSidebarTab === 'datasheet' && (
               <Datasheets />
+            )}
+
+            {activeSidebarTab === 'templates' && (
+              <div className="sidebar-content templates-panel">
+                <p className="templates-intro">
+                  Pre-built circuits with starter code. Click <strong>Load</strong> to instantly set up the sandbox and editor.
+                </p>
+                <div className="templates-grid">
+                  {CIRCUIT_TEMPLATES.map((tmpl) => (
+                    <div key={tmpl.id} className="template-card">
+                      <div className="template-card-top">
+                        <span className="template-icon">{tmpl.icon}</span>
+                        <div className="template-meta">
+                          <span className={`template-difficulty difficulty-${tmpl.difficulty.toLowerCase()}`}>
+                            {tmpl.difficulty}
+                          </span>
+                          <span className="template-board">{tmpl.board === 'uno' ? 'Uno' : 'ESP32'}</span>
+                        </div>
+                      </div>
+                      <h4 className="template-name">{tmpl.name}</h4>
+                      <p className="template-desc">{tmpl.description}</p>
+                      <div className="template-tags">
+                        {tmpl.tags.slice(0, 3).map(tag => (
+                          <span key={tag} className="template-tag">{tag}</span>
+                        ))}
+                      </div>
+                      <button
+                        className="btn btn-primary template-load-btn"
+                        onClick={() => {
+                          if (selectedMCUModel !== tmpl.board) {
+                            handleBoardChange(tmpl.board);
+                          }
+                          const { components: tComps, wires: tWires } = tmpl.build();
+                          setComponents(tComps);
+                          setWires(tWires);
+                          setSimulationState({ isPlaying: false, speed: 1, logs: [], pinVoltages: {}, pinModes: {} });
+                          setDebuggerAlerts([]);
+                          setFiles([{ name: `${tmpl.id}.ino`, content: tmpl.starterCode, isActive: true }]);
+                        }}
+                      >
+                        ⚡ Load Template
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         </aside>
