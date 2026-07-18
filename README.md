@@ -1,5 +1,5 @@
-﻿<div align="center">
-  <img src="https://img.icons8.com/nolan/96/processor.png" alt="XavierLabs Logo" width="80" height="80">
+<div align="center">
+  <img src="https://img.icons8.com/ios-filled/100/FFFFFF/cpu.png" alt="XavierLabs Logo" width="80" height="80">
   <h1 align="center">XavierLabs IDE</h1>
   
   <p align="center">
