@@ -13,7 +13,6 @@ import {
   AlertTriangle,
   RotateCcw,
   Bug,
-  Database,
   ChevronLeft,
   ChevronDown,
   ChevronUp,
@@ -704,7 +703,12 @@ function App() {
                     onClick={() => handleAddComponent('led')}
                     className="component-card"
                   >
-                    <span className="w-4 h-4 rounded-full bg-red-650 shadow" style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#ef4444', boxShadow: '0 0 6px rgba(239, 68, 68, 0.4)' }} />
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: 'drop-shadow(0 0 3px rgba(239,68,68,0.5))' }}>
+                      <path d="M12 2a6 6 0 0 0-6 6v7h12V8a6 6 0 0 0-6-6Z"/>
+                      <path d="M6 19h12"/>
+                      <path d="M9 19v3"/>
+                      <path d="M15 19v3"/>
+                    </svg>
                     <span>Red LED</span>
                   </div>
                   <div
@@ -718,7 +722,12 @@ function App() {
                     }}
                     className="component-card"
                   >
-                    <span className="w-4 h-4 rounded-full bg-emerald-650 shadow" style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#10b981', boxShadow: '0 0 6px rgba(16, 185, 129, 0.4)' }} />
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: 'drop-shadow(0 0 3px rgba(16,185,129,0.5))' }}>
+                      <path d="M12 2a6 6 0 0 0-6 6v7h12V8a6 6 0 0 0-6-6Z"/>
+                      <path d="M6 19h12"/>
+                      <path d="M9 19v3"/>
+                      <path d="M15 19v3"/>
+                    </svg>
                     <span>Green LED</span>
                   </div>
                 </div>
@@ -729,22 +738,40 @@ function App() {
                     onClick={() => handleAddComponent('button')}
                     className="component-card"
                   >
-                    <PlusCircle size={14} className="text-rose-500" />
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect width="16" height="16" x="4" y="4" rx="2"/>
+                      <circle cx="12" cy="12" r="5" fill="rgba(255,255,255,0.1)"/>
+                      <circle cx="12" cy="12" r="2" fill="currentColor"/>
+                      <path d="M2 12h2"/>
+                      <path d="M20 12h2"/>
+                    </svg>
                     <span>Push Button</span>
                   </div>
                   <div
                     onClick={() => handleAddComponent('potentiometer')}
                     className="component-card"
                   >
-                    <RotateCcw size={14} className="text-cyan-400" />
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="9"/>
+                      <circle cx="12" cy="12" r="3" fill="rgba(255,255,255,0.15)"/>
+                      <line x1="12" y1="12" x2="12" y2="6"/>
+                    </svg>
                     <span>Potentiometer</span>
                   </div>
                   <div
                     onClick={() => handleAddComponent('dht11')}
                     className="component-card component-card-large"
                   >
-                    <Database size={14} className="text-blue-400" />
-                    <span>DHT11 Temperature Sensor</span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect width="14" height="18" x="5" y="3" rx="2"/>
+                      <path d="M9 7h6"/>
+                      <path d="M9 11h6"/>
+                      <path d="M9 15h6"/>
+                      <path d="M8 21v2"/>
+                      <path d="M12 21v2"/>
+                      <path d="M16 21v2"/>
+                    </svg>
+                    <span>DHT11 Temp & Humidity Sensor</span>
                   </div>
                 </div>
 
@@ -754,14 +781,26 @@ function App() {
                     onClick={() => handleAddComponent('resistor')}
                     className="component-card"
                   >
-                    <span style={{ display: 'inline-block', width: '22px', height: '6px', backgroundColor: '#fcd34d', border: '1px solid #d97706', borderRadius: '2px' }} />
+                    <svg width="22" height="8" viewBox="0 0 44 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="0" y1="8" x2="8" y2="8"/>
+                      <rect x="8" y="2" width="28" height="12" rx="4" fill="rgba(255,255,255,0.05)"/>
+                      <line x1="14" y1="2" x2="14" y2="14"/>
+                      <line x1="22" y1="2" x2="22" y2="14"/>
+                      <line x1="30" y1="2" x2="30" y2="14"/>
+                      <line x1="36" y1="8" x2="44" y2="8"/>
+                    </svg>
                     <span>Resistor</span>
                   </div>
                   <div
                     onClick={() => handleAddComponent('breadboard')}
                     className="component-card"
                   >
-                    <span style={{ display: 'inline-block', width: '24px', height: '12px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '2px' }} />
+                    <svg width="22" height="10" viewBox="0 0 44 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <rect width="42" height="18" x="1" y="1" rx="2" fill="rgba(255,255,255,0.05)"/>
+                      <line x1="6" y1="6" x2="38" y2="6" strokeDasharray="1,2" strokeWidth="2"/>
+                      <line x1="6" y1="10" x2="38" y2="10" strokeDasharray="1,2" strokeWidth="2"/>
+                      <line x1="6" y1="14" x2="38" y2="14" strokeDasharray="1,2" strokeWidth="2"/>
+                    </svg>
                     <span>Breadboard</span>
                   </div>
                 </div>
