@@ -1,5 +1,9 @@
 <div align="center">
-  <img src="https://img.icons8.com/ios-filled/100/FFFFFF/cpu.png" alt="XavierLabs Logo" width="80" height="80">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/venstqs/Embedded-Studio-AI-/main/public/favicon.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/venstqs/Embedded-Studio-AI-/main/public/logo-black.svg">
+    <img alt="XavierLabs Logo" src="https://raw.githubusercontent.com/venstqs/Embedded-Studio-AI-/main/public/favicon.svg" width="80" height="80">
+  </picture>
   <h1 align="center">XavierLabs IDE</h1>
   
   <p align="center">
