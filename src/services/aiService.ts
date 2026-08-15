@@ -1,8 +1,10 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { Component, Wire } from '../types/circuit';
 
-export const askGemini = async (
-  apiKey: string,
+export const askCopilot = async (
+  provider: 'gemini' | 'groq',
+  geminiKey: string,
+  groqKey: string,
   userMessage: string,
   code: string,
   components: Component[],
@@ -51,18 +53,45 @@ ${code}
 
 Explain concepts clearly, review safety rules (e.g. current-limiting resistors for LEDs, VCC short-circuits, signal voltages), and guide students to fix issues step-by-step. Keep responses formatted in clean, scannable Markdown. Avoid long-winded answers.`;
 
-    const ai = new GoogleGenerativeAI(apiKey);
-    const model = ai.getGenerativeModel({
-      model: 'gemini-1.5-flash',
-      systemInstruction,
-    });
+    if (provider === 'gemini') {
+      const ai = new GoogleGenerativeAI(geminiKey);
+      const model = ai.getGenerativeModel({
+        model: 'gemini-1.5-flash',
+        systemInstruction,
+      });
 
-    const result = await model.generateContent(userMessage);
-    const response = await result.response;
-    return response.text();
+      const result = await model.generateContent(userMessage);
+      const response = await result.response;
+      return response.text();
+    } else {
+      // Groq REST API Implementation
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${groqKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'llama3-70b-8192',
+          messages: [
+            { role: 'system', content: systemInstruction },
+            { role: 'user', content: userMessage }
+          ],
+          temperature: 0.7,
+          max_tokens: 2048,
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Groq API Error: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      return data.choices[0].message.content;
+    }
   } catch (error: any) {
-    console.error('Gemini API Error:', error);
-    throw new Error(error?.message || 'Failed to call Gemini API. Check your key and connection.');
+    console.error('AI API Error:', error);
+    throw new Error(error?.message || 'Failed to call AI API. Check your key and connection.');
   }
 };
 

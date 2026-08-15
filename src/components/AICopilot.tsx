@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Bot, Send, Trash2, Loader2, Key } from 'lucide-react';
-import { askGemini, getMockResponse } from '../services/geminiService';
+import { askCopilot, getMockResponse } from '../services/aiService';
 import type { Component, Wire } from '../types/circuit';
 
 interface Props {
@@ -122,12 +122,19 @@ const AICopilot: React.FC<Props> = ({ code, components, wires, mcuModel }) => {
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [provider, setProvider] = useState<'gemini' | 'groq'>('gemini');
   const [hasApiKey, setHasApiKey] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setHasApiKey(!!localStorage.getItem('gemini_api_key'));
+    const currentProvider = (localStorage.getItem('ai_provider') as 'gemini' | 'groq') || 'gemini';
+    setProvider(currentProvider);
+    if (currentProvider === 'gemini') {
+      setHasApiKey(!!localStorage.getItem('gemini_api_key'));
+    } else {
+      setHasApiKey(!!localStorage.getItem('groq_api_key'));
+    }
   }, []);
 
   useEffect(() => {
@@ -143,10 +150,12 @@ const AICopilot: React.FC<Props> = ({ code, components, wires, mcuModel }) => {
     setIsLoading(true);
 
     try {
-      const apiKey = localStorage.getItem('gemini_api_key') || '';
+      const geminiKey = localStorage.getItem('gemini_api_key') || '';
+      const groqKey = localStorage.getItem('groq_api_key') || '';
+      
       let response: string;
-      if (apiKey) {
-        response = await askGemini(apiKey, userMsg, code, components, wires, mcuModel);
+      if (hasApiKey) {
+        response = await askCopilot(provider, geminiKey, groqKey, userMsg, code, components, wires, mcuModel);
       } else {
         await new Promise(r => setTimeout(r, 600));
         response = getMockResponse(userMsg, code, components, wires);
@@ -163,6 +172,7 @@ const AICopilot: React.FC<Props> = ({ code, components, wires, mcuModel }) => {
     }
   };
 
+
   return (
     <div className="flex flex-col h-full bg-transparent overflow-hidden">
       {/* Header */}
@@ -173,7 +183,7 @@ const AICopilot: React.FC<Props> = ({ code, components, wires, mcuModel }) => {
           </div>
           <div>
             <h2 className="text-sm font-semibold text-white">AI Copilot</h2>
-            <p className="text-[10px] text-[var(--text-muted)]">{hasApiKey ? 'Gemini Flash · Active' : 'Demo Mode'}</p>
+            <p className="text-[10px] text-[var(--text-muted)]">{hasApiKey ? (provider === 'gemini' ? 'Gemini Flash · Active' : 'Groq Llama 3 · Active') : 'Demo Mode'}</p>
           </div>
         </div>
         <div className="flex items-center space-x-2">
