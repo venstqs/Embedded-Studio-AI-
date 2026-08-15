@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  
+  --color-cyber-cyan: #06b6d4;
+  --color-cyber-red: #ef4444;
+  --color-cyber-amber: #f59e0b;
+}
+
+:root {
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  
+  /* Deep obsidian black */
+  --bg-primary: #09090b; 
+  /* Panels and surfaces */
+  --bg-secondary: #121215;
+  
+  /* Active and hover states */
+  --bg-active: #1c1c21;
+  --bg-hover: #27272a;
+  
+  /* Subtle border/dividers (No heavy strokes) */
+  --border-color: #1f1f23;
+  --border-light: #27272a;
+  --border-active: #3f3f46;
+  
+  /* Pure crisp typography */
+  --text-primary: #ffffff;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  
+  /* Monochrome accents with subtle indicator colors */
+  --color-cyan: #ffffff; 
+  --color-red: #ef4444;
+  --color-amber: #f59e0b;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  overflow: hidden; /* Fixed IDE layout */
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Beautiful Canvas Grid */
+.canvas-bg {
+  background-color: var(--bg-primary);
+  background-image: 
+    radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Typography Utilities */
+.mono {
+  font-family: var(--font-mono);
+}
+
+/* Sleek Buttons */
+.btn-primary {
+  @apply bg-white text-black font-medium hover:bg-gray-200 transition-colors duration-200 rounded-full px-4 py-2 text-sm;
+}
+
+.btn-danger {
+  @apply bg-[var(--color-red)] text-[#131314] font-medium hover:opacity-90 transition-colors duration-200 rounded-full px-4 py-2 text-sm;
+}
+
+/* Panel Utilities (Google Surface) */
+.panel-glass {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2), 0 2px 4px -1px rgba(0, 0, 0, 0.1);
+}
+
+/* Solid Logo */
+.logo-text {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Custom Webkit Scrollbar (Sleek) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-active);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
