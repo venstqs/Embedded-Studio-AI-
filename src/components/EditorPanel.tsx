@@ -102,16 +102,28 @@ const EditorPanel: React.FC<Props> = ({ code, setCode, onClose, mcuModel, onRun,
       </div>
 
       {/* Status bar */}
-      <div className="flex-shrink-0 flex items-center justify-between px-4 py-1.5 bg-[var(--bg-active)] text-[var(--text-secondary)] text-[10px] border-t border-[var(--border-color)]">
-        <div className="flex items-center space-x-4">
-          <span>{lines.length} lines</span>
-          <span>Arduino C++</span>
-          <span>UTF-8</span>
+      <div className="flex-shrink-0 flex items-center justify-between px-4 py-1.5 bg-[#121215] text-[#888] text-[10px] border-t border-[#333]">
+        <div className="flex items-center space-x-6">
+          <span className="flex items-center space-x-1 hover:text-white cursor-help" title="Lines of Code">
+            <span>Ln {lines.length}</span>
+          </span>
+          <span className="hover:text-white cursor-pointer" title="Language">C++ (Arduino)</span>
+          <span className="hover:text-white cursor-pointer" title="Encoding">UTF-8</span>
+          
+          <button 
+            onClick={() => {
+              // Very simple code formatting stub (just trims excess whitespace)
+              setCode(code.split('\n').map(l => l.trimEnd()).join('\n').replace(/\n{3,}/g, '\n\n'));
+            }}
+            className="text-[#888] hover:text-white px-2 py-0.5 rounded border border-[#333] hover:bg-[#333] transition-colors"
+          >
+            Format Code
+          </button>
         </div>
         <div className="flex items-center space-x-4">
-          <span>{mcuModel === 'uno' ? 'Arduino Uno R3' : 'ESP32 DevKit v1'}</span>
-          <span className={`flex items-center space-x-1 ${isRunning ? 'text-green-300' : ''}`}>
-            <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1 ${isRunning ? 'bg-green-400 animate-pulse' : 'bg-white opacity-50'}`} />
+          <span className="font-mono bg-[#1e1e1e] px-2 py-0.5 rounded border border-[#333]">{mcuModel === 'uno' ? 'Arduino Uno R3' : 'ESP32 DevKit v1'}</span>
+          <span className={`flex items-center space-x-1 ${isRunning ? 'text-green-400' : ''}`}>
+            <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1 ${isRunning ? 'bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-[#555]'}`} />
             {isRunning ? 'Simulation Running' : 'Ready'}
           </span>
         </div>

@@ -43,6 +43,7 @@ const CircuitCanvas: React.FC<Props> = ({
   const [wireInProgress, setWireInProgress] = useState<WireInProgress | null>(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [selectedCompId, setSelectedCompId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, compId: string } | null>(null);
   const [hoveredPinId, setHoveredPinId] = useState<string | null>(null);
 
   const generateId = () => Math.random().toString(36).substring(2, 9);
@@ -850,12 +851,120 @@ const CircuitCanvas: React.FC<Props> = ({
               transform={`translate(${comp.x},${comp.y})`}
               style={{ cursor: draggingCompId === comp.id ? 'grabbing' : wireInProgress ? 'crosshair' : 'grab' }}
               onMouseDown={e => handleCompMouseDown(e, comp)}
+              onContextMenu={e => {
+                e.preventDefault();
+                e.stopPropagation();
+                setSelectedCompId(comp.id);
+                setContextMenu({ x: e.clientX, y: e.clientY, compId: comp.id });
+              }}
             >
               {renderComponent(comp)}
             </g>
           ))}
         </g>
       </svg>
+
+      {/* Context Menu Overlay */}
+      {contextMenu && (
+        <div 
+          className="fixed z-50 bg-[#1e1e1e] border border-[#333] rounded-md shadow-lg py-1 w-48 text-sm"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <button 
+            className="w-full text-left px-4 py-2 hover:bg-[#2d2d2d] text-white flex items-center space-x-2"
+            onClick={() => {
+              const comp = components.find(c => c.id === contextMenu.compId);
+              if (comp) {
+                setComponents(components.map(c => c.id === comp.id ? { ...c, rotation: ((c.rotation || 0) + 90) % 360 } : c));
+              }
+              setContextMenu(null);
+            }}
+          >
+            <span>Rotate 90°</span>
+          </button>
+          <div className="h-px w-full bg-[#333] my-1" />
+          <button 
+            className="w-full text-left px-4 py-2 hover:bg-red-900/40 text-red-400 flex items-center space-x-2"
+            onClick={() => {
+              setComponents(components.filter(c => c.id !== contextMenu.compId));
+              setWires(wires.filter(w => {
+                const comp = components.find(c => c.id === contextMenu.compId);
+                return !comp?.pins.some(p => p.id === w.fromPinId || p.id === w.toPinId);
+              }));
+              setContextMenu(null);
+              setSelectedCompId(null);
+            }}
+          >
+            <Trash2 size={14} />
+            <span>Delete</span>
+          </button>
+        </div>
+      )}
+
+      {/* Properties Panel Overlay */}
+      {selectedCompId && !contextMenu && (() => {
+        const comp = components.find(c => c.id === selectedCompId);
+        if (!comp || comp.type === 'breadboard') return null;
+        
+        return (
+          <div className="absolute top-4 right-4 z-40 bg-[#1e1e1e]/90 backdrop-blur-md border border-[#333] rounded-lg shadow-xl w-64 text-xs">
+            <div className="px-3 py-2 border-b border-[#333] font-semibold text-white flex justify-between items-center">
+              <span>{comp.name} Properties</span>
+              <button onClick={() => setSelectedCompId(null)} className="text-[#888] hover:text-white">✕</button>
+            </div>
+            <div className="p-3 space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-[#888]">Position X</span>
+                <span className="text-white font-mono">{comp.x}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-[#888]">Position Y</span>
+                <span className="text-white font-mono">{comp.y}</span>
+              </div>
+              
+              {comp.type === 'resistor' && (
+                <div>
+                  <label className="block text-[#888] mb-1">Resistance (Ω)</label>
+                  <select 
+                    className="w-full bg-[#09090b] border border-[#333] rounded px-2 py-1 text-white outline-none"
+                    value={comp.value || 220}
+                    onChange={e => {
+                      setComponents(components.map(c => 
+                        c.id === comp.id ? { ...c, value: parseInt(e.target.value) } : c
+                      ));
+                    }}
+                  >
+                    <option value={220}>220 Ω</option>
+                    <option value={330}>330 Ω</option>
+                    <option value={1000}>1 kΩ</option>
+                    <option value={10000}>10 kΩ</option>
+                  </select>
+                </div>
+              )}
+
+              {comp.type === 'led' && (
+                <div>
+                  <label className="block text-[#888] mb-1">LED Color</label>
+                  <select 
+                    className="w-full bg-[#09090b] border border-[#333] rounded px-2 py-1 text-white outline-none"
+                    value={comp.color || 'red'}
+                    onChange={e => {
+                      setComponents(components.map(c => 
+                        c.id === comp.id ? { ...c, color: e.target.value } : c
+                      ));
+                    }}
+                  >
+                    <option value="red">Red</option>
+                    <option value="green">Green</option>
+                    <option value="blue">Blue</option>
+                    <option value="yellow">Yellow</option>
+                  </select>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

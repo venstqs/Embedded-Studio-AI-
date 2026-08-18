@@ -39,6 +39,7 @@ export interface Component {
   value?: number; // resistance in ohms, temperature, angle, distance
   color?: string; // LED color: 'red', 'green', 'blue', 'yellow', 'white'
   rotation?: number; // 0, 90, 180, 270
+  properties?: any; // e.g. resistance, color, maxVoltage
   state?: {
     isOn?: boolean;
     brightness?: number; // 0-255 for analogWrite / PWM
