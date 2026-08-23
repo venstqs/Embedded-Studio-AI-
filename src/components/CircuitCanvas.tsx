@@ -1,7 +1,7 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import type { Component, Wire, SimulationState, Pin } from '../types/circuit';
 import { getResistorColorBands } from '../services/circuitPresets';
-import { Trash2, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { Trash2, Maximize2, Grid3X3 } from 'lucide-react';
 
 interface Props {
   components: Component[];
@@ -45,6 +45,7 @@ const CircuitCanvas: React.FC<Props> = ({
   const [selectedCompId, setSelectedCompId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, compId: string } | null>(null);
   const [hoveredPinId, setHoveredPinId] = useState<string | null>(null);
+  const [gridMode, setGridMode] = useState<'dots' | 'lines' | 'none'>('dots');
 
   const generateId = () => Math.random().toString(36).substring(2, 9);
 
@@ -715,24 +716,49 @@ const CircuitCanvas: React.FC<Props> = ({
 
   return (
     <div className="w-full h-full relative overflow-hidden" style={{ cursor: isPanning ? 'grabbing' : wireInProgress ? 'crosshair' : 'default' }}>
-      {/* Canvas Controls */}
-      <div className="absolute top-4 right-4 z-10 flex flex-col space-y-2">
-        <button onClick={() => setView(v => ({ ...v, scale: Math.min(3, v.scale * 1.2) }))}
-          className="p-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-white hover:bg-[var(--bg-active)] transition-all shadow-lg"
-          title="Zoom In">
-          <ZoomIn size={16} />
+      {/* Canvas HUD — Floating pill bottom-right */}
+      <div className="absolute bottom-4 right-4 z-10 flex items-center bg-[#141416]/90 backdrop-blur-md border border-[#2a2a2a] rounded-2xl shadow-xl overflow-hidden">
+        {/* Zoom out */}
+        <button
+          onClick={() => setView(v => ({ ...v, scale: Math.max(0.3, v.scale * 0.8) }))}
+          className="px-3 py-2 text-zinc-500 hover:text-white hover:bg-white/5 transition-colors text-xs font-bold"
+          title="Zoom Out"
+        >−</button>
+        {/* Zoom level */}
+        <button
+          onClick={() => setView({ x: 0, y: 0, scale: 1 })}
+          className="px-3 py-2 text-zinc-300 hover:text-white hover:bg-white/5 transition-colors text-[11px] font-mono min-w-[48px] text-center border-x border-[#2a2a2a]"
+          title="Reset to 100%"
+        >{Math.round(view.scale * 100)}%</button>
+        {/* Zoom in */}
+        <button
+          onClick={() => setView(v => ({ ...v, scale: Math.min(3, v.scale * 1.2) }))}
+          className="px-3 py-2 text-zinc-500 hover:text-white hover:bg-white/5 transition-colors text-xs font-bold border-r border-[#2a2a2a]"
+          title="Zoom In"
+        >+</button>
+        {/* Fit to screen */}
+        <button
+          onClick={() => setView({ x: 0, y: 0, scale: 1 })}
+          className="px-2.5 py-2 text-zinc-500 hover:text-white hover:bg-white/5 transition-colors border-r border-[#2a2a2a]"
+          title="Fit to Screen"
+        >
+          <Maximize2 size={13} />
         </button>
-        <button onClick={() => setView(v => ({ ...v, scale: Math.max(0.3, v.scale * 0.8) }))}
-          className="p-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-white hover:bg-[var(--bg-active)] transition-all shadow-lg"
-          title="Zoom Out">
-          <ZoomOut size={16} />
+        {/* Grid toggle */}
+        <button
+          onClick={() => setGridMode(m => m === 'dots' ? 'lines' : m === 'lines' ? 'none' : 'dots')}
+          className={`px-2.5 py-2 transition-colors ${
+            gridMode !== 'none' ? 'text-white hover:bg-white/5' : 'text-zinc-600 hover:text-zinc-400 hover:bg-white/5'
+          }`}
+          title={`Grid: ${gridMode} — click to toggle`}
+        >
+          <Grid3X3 size={13} />
         </button>
-        <button onClick={() => setView({ x: 0, y: 0, scale: 1 })}
-          className="p-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-white hover:bg-[var(--bg-active)] transition-all shadow-lg"
-          title="Reset View">
-          <Maximize2 size={16} />
-        </button>
-        {selectedCompId && (
+      </div>
+
+      {/* Delete selected pill top-right */}
+      {selectedCompId && (
+        <div className="absolute top-4 right-4 z-10">
           <button
             onClick={() => {
               setComponents(components.filter(c => c.id !== selectedCompId));
@@ -743,17 +769,13 @@ const CircuitCanvas: React.FC<Props> = ({
               setSelectedCompId(null);
               onSelectComponent?.(null);
             }}
-            className="p-2 rounded-lg bg-red-900 border border-red-700 text-red-400 hover:bg-red-800 hover:text-red-300 transition-all shadow-lg"
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-red-950/80 backdrop-blur-md border border-red-800 text-red-400 hover:bg-red-900/80 rounded-xl text-xs transition-all shadow-lg"
             title="Delete Selected (Del)">
-            <Trash2 size={16} />
+            <Trash2 size={12} />
+            <span>Delete</span>
           </button>
-        )}
-      </div>
-
-      {/* Scale indicator */}
-      <div className="absolute bottom-4 right-4 z-10 font-mono text-xs text-[var(--text-muted)] bg-[var(--bg-secondary)] border border-[var(--border-color)] px-2 py-1 rounded-md">
-        {Math.round(view.scale * 100)}%
-      </div>
+        </div>
+      )}
 
       {/* Wire mode indicator */}
       {wireInProgress && (
@@ -765,10 +787,17 @@ const CircuitCanvas: React.FC<Props> = ({
       {/* Empty canvas hint */}
       {components.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
-          <div className="text-center">
-            <div className="text-[var(--text-muted)] text-6xl mb-4 opacity-20">⚡</div>
-            <p className="text-[var(--text-muted)] font-mono text-sm opacity-50">Add components from the library to start your circuit</p>
-            <p className="text-[var(--text-muted)] font-mono text-xs opacity-30 mt-2">Click components to select · Drag to move · Click pins to wire</p>
+          <div className="text-center select-none">
+            <div className="text-6xl mb-5 opacity-10">⚡</div>
+            <p className="text-zinc-600 text-sm font-medium mb-1">Your canvas is empty</p>
+            <p className="text-zinc-700 text-xs">Add components from the left panel to begin wiring</p>
+            <div className="mt-5 flex items-center justify-center space-x-4 text-[10px] text-zinc-700">
+              <span>🖱 Scroll = Zoom</span>
+              <span>·</span>
+              <span>Alt+Drag = Pan</span>
+              <span>·</span>
+              <span>Right-Click = Menu</span>
+            </div>
           </div>
         </div>
       )}
@@ -784,9 +813,13 @@ const CircuitCanvas: React.FC<Props> = ({
         style={{ userSelect: 'none' }}
       >
         <defs>
-          {/* Dotted grid pattern */}
+          {/* Dot grid */}
           <pattern id="grid-dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
             <circle cx="1" cy="1" r="0.8" fill="rgba(255,255,255,0.08)" />
+          </pattern>
+          {/* Line grid */}
+          <pattern id="grid-lines" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
+            <path d="M 24 0 L 0 0 0 24" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="0.5" />
           </pattern>
           {/* Radial fade mask */}
           <radialGradient id="canvas-fade" cx="50%" cy="50%" r="70%">
@@ -796,12 +829,12 @@ const CircuitCanvas: React.FC<Props> = ({
           <mask id="canvas-mask">
             <rect width="100%" height="100%" fill="url(#canvas-fade)" />
           </mask>
-
         </defs>
 
         {/* Background grid */}
         <rect className="canvas-bg-rect" width="100%" height="100%" fill="#09090b" />
-        <rect width="100%" height="100%" fill="url(#grid-dots)" mask="url(#canvas-mask)" />
+        {gridMode === 'dots' && <rect width="100%" height="100%" fill="url(#grid-dots)" mask="url(#canvas-mask)" />}
+        {gridMode === 'lines' && <rect width="100%" height="100%" fill="url(#grid-lines)" mask="url(#canvas-mask)" />}
 
         {/* World-space group */}
         <g transform={`translate(${view.x},${view.y}) scale(${view.scale})`}>

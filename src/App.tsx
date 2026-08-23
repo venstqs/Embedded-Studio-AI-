@@ -14,7 +14,9 @@ import SettingsModal from './components/SettingsModal';
 import { CommandPalette } from './components/CommandPalette';
 import { runStaticAnalysis } from './services/simulationEngine';
 import { createComponentPreset } from './services/circuitPresets';
-import { Terminal, Code, Grid3X3, Zap, Bot, BookOpen, X, AlertTriangle, CheckCircle, Info, AlertCircle, BarChart3, Gauge, Bug } from 'lucide-react';
+import { Terminal, Code, Grid3X3, Zap, Bot, BookOpen, X, AlertTriangle, CheckCircle, Info, AlertCircle, BarChart3, Gauge, Bug, HelpCircle } from 'lucide-react';
+import TemplateGallery from './components/TemplateGallery';
+import KeyboardShortcuts from './components/KeyboardShortcuts';
 
 // ------- Toast Notifications -------
 interface Toast {
@@ -125,6 +127,8 @@ function App() {
   const [isInstrumentsMinimized, setIsInstrumentsMinimized] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(true);
 
   // Resizable Bottom Panel
   const [bottomPanelHeight, setBottomPanelHeight] = useState(320);
@@ -327,13 +331,29 @@ function App() {
     setSimulationState({ isPlaying: false, speed: 1, logs: [], pinVoltages: {}, pinModes: {} });
     setDebuggerAlerts([]);
     setOscilloscopeSamples({});
+    setShowTemplates(true);
     addToast('info', 'Canvas cleared.');
   }, [addToast]);
 
   return (
     <>
-
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
+      {/* Template Gallery — shown when canvas is empty */}
+      {showTemplates && (
+        <TemplateGallery
+          onLoad={({ components: newComps, wires: newWires, code: newCode }) => {
+            setComponents(newComps);
+            setWires(newWires);
+            setCode(newCode);
+            setShowTemplates(false);
+          }}
+          onDismiss={() => setShowTemplates(false)}
+        />
+      )}
+
+      {/* Keyboard Shortcuts Overlay */}
+      {isShortcutsOpen && <KeyboardShortcuts onClose={() => setIsShortcutsOpen(false)} />}
 
       <div className="h-screen w-screen flex flex-col bg-[var(--bg-primary)] text-[var(--text-primary)] overflow-hidden font-sans">
 
@@ -464,6 +484,11 @@ function App() {
               }}
             />
             <div className="flex-1" />
+            <SidebarButton
+              icon={HelpCircle} label="Keyboard Shortcuts (?)"
+              active={isShortcutsOpen}
+              onClick={() => setIsShortcutsOpen(s => !s)}
+            />
             <SidebarButton
               icon={Zap} label="Power Analyzer"
               active={activeRightPanel === 'power'}
