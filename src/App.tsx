@@ -1,716 +1,315 @@
-import React, { useState, useCallback } from 'react';
-import './App.css';
-import type { Component, Wire, SimulationState, MCUModel, DebuggerAlert } from './types/circuit';
-import type { OscilloscopeSample } from './types/circuit';
-import Toolbar from './components/Toolbar';
-import CircuitCanvas from './components/CircuitCanvas';
-import ComponentLibrary from './components/ComponentLibrary';
-import EditorPanel from './components/EditorPanel';
-import InstrumentationStudio from './components/InstrumentationStudio';
-import AICopilot from './components/AICopilot';
-import PowerAnalyzer from './components/PowerAnalyzer';
-import Datasheets from './components/Datasheets';
-import SettingsModal from './components/SettingsModal';
-import { CommandPalette } from './components/CommandPalette';
-import { runStaticAnalysis } from './services/simulationEngine';
-import { createComponentPreset } from './services/circuitPresets';
-import { Terminal, Code, Grid3X3, Zap, Bot, BookOpen, X, AlertTriangle, CheckCircle, Info, AlertCircle, BarChart3, Gauge, Bug, HelpCircle } from 'lucide-react';
-import TemplateGallery from './components/TemplateGallery';
-import KeyboardShortcuts from './components/KeyboardShortcuts';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
+import { Code2, Download, FolderOpen, Play, Square, X } from 'lucide-react';
+import type { Live, Note, PartType, Project } from './types';
+import { PARTS, isBoard } from './parts/catalog';
+import { ArtDefs } from './parts/PartArt';
+import { STARTERS } from './data/projects';
+import { Simulator } from './sim/simulator';
+import { CompileError } from './sim/compiler';
+import { setBuzzer, unlockAudio } from './sim/audio';
+import Workbench from './views/Workbench';
+import type { Update } from './views/Workbench';
+import SidePanel from './views/SidePanel';
+import type { Problem } from './views/SidePanel';
+import Home from './views/Home';
 
-// ------- Toast Notifications -------
-interface Toast {
-  id: string;
-  type: 'success' | 'error' | 'warning' | 'info';
-  message: string;
+const Discover = lazy(() => import('./views/Discover'));
+
+type ViewName = 'home' | 'build' | 'discover';
+const STORE = 'xavierlabs_project_v2';
+const PANEL_W = 'xavierlabs_panel_w';
+
+const BLANK_CODE = `void setup() {
+  // runs once when the board starts
+
 }
 
-const TOAST_ICONS = {
-  success: CheckCircle,
-  error: AlertCircle,
-  warning: AlertTriangle,
-  info: Info,
-};
-const TOAST_COLORS = {
-  success: 'border-green-500 text-green-400 bg-green-950',
-  error: 'border-red-500 text-red-400 bg-red-950',
-  warning: 'border-amber-500 text-amber-400 bg-amber-950',
-  info: 'border-blue-500 text-blue-400 bg-blue-950',
-};
+void loop() {
+  // runs again and again
 
-const ToastContainer: React.FC<{ toasts: Toast[]; onDismiss: (id: string) => void }> = ({ toasts, onDismiss }) => (
-  <div className="fixed bottom-6 right-6 z-[9998] flex flex-col space-y-2 pointer-events-none">
-    {toasts.map(toast => {
-      const Icon = TOAST_ICONS[toast.type];
-      return (
-        <div key={toast.id}
-          className={`flex items-start space-x-2 px-4 py-3 rounded-xl border ${TOAST_COLORS[toast.type]} bg-opacity-80 backdrop-blur-md shadow-xl max-w-sm pointer-events-auto animate-in slide-in-from-right duration-300`}>
-          <Icon size={14} className="flex-shrink-0 mt-0.5" />
-          <p className="text-xs flex-1 leading-relaxed text-white">{toast.message}</p>
-          <button onClick={() => onDismiss(toast.id)} className="opacity-50 hover:opacity-100 transition-opacity flex-shrink-0">
-            <X size={12} />
-          </button>
-        </div>
-      );
-    })}
-  </div>
-);
+}
+`;
 
-// Helper for default starter circuit
-const createInitialCircuit = () => {
-  const mcu = createComponentPreset('mcu', 'uno');
-  const led = createComponentPreset('led');
-  const resistor = createComponentPreset('resistor');
-
-  mcu.x = 80; mcu.y = 90;
-  led.x = 420; led.y = 80;
-  resistor.x = 420; resistor.y = 190;
-
-  const d13Pin = mcu.pins.find(p => p.name === 'D13')?.id;
-  const gndPin = mcu.pins.find(p => p.name === 'GND')?.id;
-  const resP1 = resistor.pins[0]?.id;
-  const resP2 = resistor.pins[1]?.id;
-  const ledAnode = led.pins.find(p => p.name.includes('Anode'))?.id;
-  const ledCathode = led.pins.find(p => p.name.includes('Cathode'))?.id;
-
-  const initialWires: Wire[] = [];
-  if (d13Pin && resP1) {
-    initialWires.push({ id: 'wire_init_1', fromPinId: d13Pin, toPinId: resP1, color: '#f59e0b' });
-  }
-  if (resP2 && ledAnode) {
-    initialWires.push({ id: 'wire_init_2', fromPinId: resP2, toPinId: ledAnode, color: '#ef4444' });
-  }
-  if (gndPin && ledCathode) {
-    initialWires.push({ id: 'wire_init_3', fromPinId: gndPin, toPinId: ledCathode, color: '#3b82f6' });
-  }
-
-  return { components: [mcu, led, resistor], wires: initialWires };
-};
-
-// ------- Main App -------
-function App() {
-  const initialCircuit = createInitialCircuit();
-  // Core state
-  const [mcuModel, setMcuModel] = useState<MCUModel>('uno');
-  const [components, setComponents] = useState<Component[]>(initialCircuit.components);
-  const [wires, setWires] = useState<Wire[]>(initialCircuit.wires);
-  const [selectedWireColor, setSelectedWireColor] = useState<string>('#06b6d4');
-  const [code, setCode] = useState<string>(
-    `// XavierLabs Embedded Studio\n// Arduino Uno R3 Starter Template\n\nconst int LED_PIN = 13;\n\nvoid setup() {\n  Serial.begin(9600);\n  pinMode(LED_PIN, OUTPUT);\n  Serial.println("XavierLabs: Simulation Started!");\n}\n\nvoid loop() {\n  digitalWrite(LED_PIN, HIGH);\n  Serial.println("LED ON");\n  delay(1000);\n\n  digitalWrite(LED_PIN, LOW);\n  Serial.println("LED OFF");\n  delay(1000);\n}`
-  );
-
-  // Simulation
-  const [simulationState, setSimulationState] = useState<SimulationState>({
-    isPlaying: false,
-    speed: 1,
-    logs: [],
-    pinVoltages: {},
-    pinModes: {},
-  });
-  const [debuggerAlerts, setDebuggerAlerts] = useState<DebuggerAlert[]>([]);
-  const [oscilloscopeSamples, setOscilloscopeSamples] = useState<Record<string, OscilloscopeSample[]>>({});
-
-  // UI panels
-  const [activeLeftPanel, setActiveLeftPanel] = useState<'components' | null>('components');
-  const [activeRightPanel, setActiveRightPanel] = useState<'copilot' | 'power' | 'datasheets' | null>(null);
-  const [activeBottomPanel, setActiveBottomPanel] = useState<'editor' | 'instruments' | null>(null);
-  const [instrumentTab, setInstrumentTab] = useState<string>('Serial Monitor');
-  
-  // Resizable sidebar width
-  const [sidebarWidth, setSidebarWidth] = useState(280);
-  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
-
-  // Window states
-  const [isEditorMaximized, setIsEditorMaximized] = useState(false);
-  const [isEditorMinimized, setIsEditorMinimized] = useState(false);
-  const [isInstrumentsMaximized, setIsInstrumentsMaximized] = useState(false);
-  const [isInstrumentsMinimized, setIsInstrumentsMinimized] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
-  const [showTemplates, setShowTemplates] = useState(true);
-
-  // Resizable Bottom Panel
-  const [bottomPanelHeight, setBottomPanelHeight] = useState(320);
-  const [isResizingBottom, setIsResizingBottom] = useState(false);
-
-  // Resizable Right Panel
-  const [rightPanelWidth, setRightPanelWidth] = useState(340);
-  const [isResizingRight, setIsResizingRight] = useState(false);
-
-  const handleSidebarMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizingSidebar(true);
-    const startX = e.clientX;
-    const startWidth = sidebarWidth;
-
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      const newWidth = Math.max(200, Math.min(480, startWidth + (moveEvent.clientX - startX)));
-      setSidebarWidth(newWidth);
-    };
-
-    const onMouseUp = () => {
-      setIsResizingSidebar(false);
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-    };
-
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
+function blankProject(): Project {
+  return {
+    name: 'Untitled project',
+    parts: [
+      { id: 'board', type: 'uno', x: 24, y: 48, rot: 0, props: {} },
+      { id: 'bb', type: 'breadboard', x: 372, y: 48, rot: 0, props: {} },
+    ],
+    wires: [],
+    code: BLANK_CODE,
   };
+}
 
-  const handleBottomPanelMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizingBottom(true);
-    const startY = e.clientY;
-    const startHeight = bottomPanelHeight;
+function isProject(v: unknown): v is Project {
+  const p = v as Project;
+  return !!p && typeof p.code === 'string' && Array.isArray(p.wires) && Array.isArray(p.parts)
+    && p.parts.every(x => x && typeof x.id === 'string' && x.type in PARTS && typeof x.x === 'number' && typeof x.y === 'number' && typeof x.props === 'object')
+    && p.wires.every(w => w && typeof w.from === 'string' && typeof w.to === 'string');
+}
 
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      // Dragging up decreases clientY, increasing height
-      const newHeight = Math.max(150, Math.min(800, startHeight - (moveEvent.clientY - startY)));
-      setBottomPanelHeight(newHeight);
-    };
+function loadSaved(): Project | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(STORE) ?? 'null');
+    return isProject(v) ? { ...v, name: String(v.name ?? 'Untitled project') } : null;
+  } catch { return null; }
+}
 
-    const onMouseUp = () => {
-      setIsResizingBottom(false);
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-    };
+const readNumber = (k: string, fallback: number) => { try { return Number(localStorage.getItem(k)) || fallback; } catch { return fallback; } };
 
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-  };
+/** Project plus undo history. `key` lets a run of edits (one drag, one slider) collapse into a single undo step. */
+interface Hist { past: Project[]; present: Project; future: Project[]; key: string | null }
+const fresh = (p: Project): Hist => ({ past: [], present: p, future: [], key: null });
 
-  const handleRightPanelMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizingRight(true);
-    const startX = e.clientX;
-    const startWidth = rightPanelWidth;
+const SAVED = loadSaved();
 
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      // Dragging left decreases clientX, increasing width
-      const newWidth = Math.max(250, Math.min(600, startWidth - (moveEvent.clientX - startX)));
-      setRightPanelWidth(newWidth);
-    };
+export default function App() {
+  const [view, setView] = useState<ViewName>(SAVED ? 'build' : 'home');
+  const [hist, setHist] = useState<Hist>(() => fresh(SAVED ?? STARTERS[0].build()));
+  const project = hist.present;
+  const [resumable, setResumable] = useState(!!SAVED);
+  const [fitKey, setFitKey] = useState(0);
+  const [discover, setDiscover] = useState<PartType>('led');
+  const [panel, setPanel] = useState<'code' | 'tutor' | null>(() => (window.innerWidth >= 1024 ? 'code' : null));
+  const [panelW, setPanelW] = useState(() => readNumber(PANEL_W, 440));
 
-    const onMouseUp = () => {
-      setIsResizingRight(false);
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-    };
+  const [running, setRunning] = useState(false);
+  const [live, setLive] = useState<Record<string, Live>>({});
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [serial, setSerial] = useState('');
+  const [problem, setProblem] = useState<Problem | null>(null);
+  const [seconds, setSeconds] = useState(0);
+  const [notice, setNotice] = useState('');
+  const sim = useRef<Simulator | null>(null);
 
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-  };
-
-  // Toasts
-  const [toasts, setToasts] = useState<Toast[]>([]);
-
-  const addToast = useCallback((type: Toast['type'], message: string) => {
-    const id = Math.random().toString(36).substring(2, 9);
-    setToasts(prev => [...prev.slice(-4), { id, type, message }]);
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
+  const update: Update = useCallback((fn, opt) => {
+    setHist(h => {
+      const next = fn(h.present);
+      if (next === h.present) return h;
+      if (opt?.skip) return { ...h, present: next };
+      const k = opt?.key ?? null;
+      const merge = k !== null && k === h.key;
+      return { past: merge ? h.past : [...h.past.slice(-100), h.present], present: next, future: [], key: k };
+    });
   }, []);
+  const undo = useCallback(() => setHist(h => (h.past.length ? { past: h.past.slice(0, -1), present: h.past[h.past.length - 1], future: [h.present, ...h.future], key: null } : h)), []);
+  const redo = useCallback(() => setHist(h => (h.future.length ? { past: [...h.past, h.present], present: h.future[0], future: h.future.slice(1), key: null } : h)), []);
 
-  const dismissToast = useCallback((id: string) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
-  }, []);
+  // Save as you go.
+  useEffect(() => {
+    const t = setTimeout(() => { try { localStorage.setItem(STORE, JSON.stringify(project)); } catch { /* storage full or blocked */ } }, 400);
+    return () => clearTimeout(t);
+  }, [project]);
+  useEffect(() => { try { localStorage.setItem(PANEL_W, String(panelW)); } catch { /* ignore */ } }, [panelW]);
 
-  // Loading removed for instant boot
+  const stop = useCallback(() => {
+    sim.current = null;
+    setRunning(false);
+    setLive({});
+    setNotes([]);
+    setBuzzer(0);
+    update(p => (p.parts.some(x => x.props.pressed) ? { ...p, parts: p.parts.map(x => (x.props.pressed ? { ...x, props: { ...x.props, pressed: 0 } } : x)) } : p), { skip: true });
+  }, [update]);
 
-  // --- Run Simulation ---
-  const handleRunSimulation = useCallback(() => {
-    if (simulationState.isPlaying) {
-      // Stop
-      setSimulationState(prev => ({ ...prev, isPlaying: false }));
-      setComponents(comps => comps.map(c => ({ ...c, state: { ...c.state, isOn: false } })));
-      addToast('info', 'Simulation stopped.');
+  const start = () => {
+    unlockAudio();
+    setProblem(null);
+    setSerial('');
+    try {
+      sim.current = new Simulator(project.parts, project.wires, project.code);
+    } catch (e) {
+      const line = e instanceof CompileError ? e.line : 1;
+      setProblem({ kind: 'build', line, message: (e as Error).message });
+      setPanel('code');
       return;
     }
+    setSeconds(0);
+    setRunning(true);
+  };
 
-    // Run static analysis
-    const report = runStaticAnalysis(code, components, wires, mcuModel);
+  // The simulation clock: one step per animation frame.
+  useEffect(() => {
+    if (!running) return;
+    let raf = 0, last = performance.now(), shown = '', lastSecond = -1;
+    const frame = (now: number) => {
+      const s = sim.current;
+      if (!s) return;
+      const f = s.step(Math.min(50, now - last));
+      last = now;
+      const key = JSON.stringify(f.live) + f.notes.length;
+      if (key !== shown) { shown = key; setLive(f.live); setNotes(f.notes); }
+      if (f.serial) setSerial(t => (t + f.serial).slice(-12000));
+      setBuzzer(f.hz);
+      const sec = Math.floor(f.ms / 100) / 10;
+      if (sec !== lastSecond) { lastSecond = sec; setSeconds(sec); }
+      if (f.error) { setProblem({ kind: 'run', line: 0, message: f.error }); setPanel('code'); stop(); return; }
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [running, stop]);
 
-    // Apply states back to components
-    setComponents(prev => prev.map(comp => {
-      let newState = { ...comp.state };
+  useEffect(() => { if (view !== 'build') stop(); }, [view, stop]);
 
-      if (comp.type === 'led' && report.ledStates[comp.id]) {
-        newState = { ...newState, ...report.ledStates[comp.id] };
-      }
-      if (comp.type === 'rgb_led' && report.rgbStates[comp.id]) {
-        const rgb = report.rgbStates[comp.id];
-        newState = { ...newState, rValue: rgb.r, gValue: rgb.g, bValue: rgb.b, isOn: rgb.isOn };
-      }
-      if (comp.type === 'servo' && report.servoAngles[comp.id] !== undefined) {
-        newState = { ...newState, angle: report.servoAngles[comp.id] };
-      }
-      if (comp.type === 'lcd' && report.lcdTexts[comp.id]) {
-        newState = { ...newState, text: report.lcdTexts[comp.id] };
-      }
-      if (comp.type === 'relay') {
-        newState = { ...newState, isRelayClosed: report.relayStates[comp.id] ?? false };
-      }
-      if (comp.type === 'buzzer' && report.buzzerFreqs[comp.id] !== undefined) {
-        newState = { ...newState, frequency: report.buzzerFreqs[comp.id] };
-      }
-      if (comp.type === 'mcu') {
-        newState = { ...newState, isOn: true };
-      }
+  // Pressing a button or moving a slider while running changes the circuit.
+  useEffect(() => { if (running) sim.current?.setCircuit(project.parts, project.wires); }, [running, project.parts, project.wires]);
 
-      return { ...comp, state: newState };
-    }));
+  // Global shortcuts: Ctrl+Enter runs (even from the code editor); Ctrl+Z / Ctrl+Shift+Z undo and redo the circuit.
+  const keys = useRef({ toggle: () => {}, undo, redo });
+  keys.current = { toggle: () => (running ? stop() : start()), undo, redo };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (view !== 'build' || !(e.ctrlKey || e.metaKey)) return;
+      if (e.key === 'Enter') { e.preventDefault(); keys.current.toggle(); return; }
+      if ((e.target as HTMLElement).closest('input,textarea,select')) return;
+      if (running) return;
+      const k = e.key.toLowerCase();
+      if (k === 'z' && !e.shiftKey) { e.preventDefault(); keys.current.undo(); }
+      else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); keys.current.redo(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [view, running]);
 
-    // Update simulation state
-    setSimulationState({
-      isPlaying: true,
-      speed: 1,
-      logs: report.logs,
-      pinVoltages: report.voltages,
-      pinModes: report.modes,
-      oscilloscopeSamples: report.oscilloscopeSamples,
-    });
+  const open = (p: Project) => {
+    stop();
+    setProblem(null);
+    setSerial('');
+    setHist(fresh(p));
+    setResumable(true);
+    setFitKey(k => k + 1);
+    setView('build');
+  };
+  const openStarter = (id: string) => { const s = STARTERS.find(x => x.id === id); if (s) open(s.build()); };
 
-    setDebuggerAlerts(report.debuggerAlerts);
-    setOscilloscopeSamples(report.oscilloscopeSamples);
-
-    // Show alerts as toasts
-    const errors = report.debuggerAlerts.filter(a => a.type === 'error');
-    const warnings = report.debuggerAlerts.filter(a => a.type === 'warning');
-    const successes = report.debuggerAlerts.filter(a => a.type === 'success');
-
-    if (errors.length > 0) {
-      addToast('error', errors[0].message.slice(0, 100));
-    } else if (warnings.length > 0) {
-      addToast('warning', warnings[0].message.slice(0, 100));
-    } else if (successes.length > 0) {
-      addToast('success', 'Firmware compiled & uploaded successfully!');
-    }
-
-    // Auto-open instruments panel to show results
-    setActiveBottomPanel('instruments');
-  }, [simulationState.isPlaying, code, components, wires, mcuModel, addToast]);
-
-  // --- Export / Import ---
-  const handleExport = useCallback(() => {
-    const project = { mcuModel, components, wires, code, exportedAt: new Date().toISOString() };
-    const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'xavierlabs_circuit.json'; a.click();
+  const download = () => {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${project.name.replace(/[^\w-]+/g, '_') || 'project'}.xavierlabs.json`;
+    a.click();
     URL.revokeObjectURL(url);
-    addToast('success', 'Project exported as xavierlabs_circuit.json');
-  }, [mcuModel, components, wires, code, addToast]);
-
-  const handleImport = useCallback(() => {
+  };
+  const openFile = () => {
     const input = document.createElement('input');
-    input.type = 'file'; input.accept = '.json';
-    input.onchange = (e: Event) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.onchange = async () => {
+      const file = input.files?.[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        try {
-          const data = JSON.parse(ev.target?.result as string);
-          if (data.components) setComponents(data.components);
-          if (data.wires) setWires(data.wires);
-          if (data.code) setCode(data.code);
-          if (data.mcuModel) setMcuModel(data.mcuModel);
-          addToast('success', 'Project imported successfully!');
-        } catch {
-          addToast('error', 'Invalid project file. Could not parse JSON.');
-        }
-      };
-      reader.readAsText(file);
+      try {
+        const data = JSON.parse(await file.text());
+        if (!isProject(data)) throw new Error('not a project');
+        open({ ...data, name: String(data.name ?? file.name.replace(/\..*$/, '')) });
+        setNotice('');
+      } catch {
+        setNotice(`${file.name} is not a XavierLabs project file. Files saved from the old version can’t be opened here.`);
+      }
     };
     input.click();
-  }, [addToast]);
+  };
 
-  const handleClearCanvas = useCallback(() => {
-    setComponents([]);
-    setWires([]);
-    setSimulationState({ isPlaying: false, speed: 1, logs: [], pinVoltages: {}, pinModes: {} });
-    setDebuggerAlerts([]);
-    setOscilloscopeSamples({});
-    setShowTemplates(true);
-    addToast('info', 'Canvas cleared.');
-  }, [addToast]);
+  /** Drag the divider between the workplane and the code panel. */
+  const startResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const sx = e.clientX, w0 = panelW;
+    const max = () => Math.min(760, window.innerWidth - 520);
+    const move = (ev: PointerEvent) => setPanelW(Math.round(Math.max(340, Math.min(max(), w0 - (ev.clientX - sx)))));
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); document.body.style.cursor = ''; };
+    document.body.style.cursor = 'col-resize';
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
+  const hasBoard = project.parts.some(p => isBoard(p.type));
+  const tabs: [ViewName, string][] = [['home', 'Learn'], ['build', 'Build'], ['discover', 'Parts in 3D']];
 
   return (
-    <>
-      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+    <div className="flex h-full flex-col">
+      <ArtDefs />
+      <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-panel px-3 py-2 sm:px-4">
+        <button onClick={() => setView('home')} className="flex items-center gap-2 font-display text-lg font-bold tracking-tight" aria-label="XavierLabs home">
+          <svg width="28" height="28" viewBox="0 0 100 100" aria-hidden="true">
+            <rect width="100" height="100" rx="22" fill="#09090b" />
+            <path d="M28 28L50 50L72 28M72 72L50 50L28 72" stroke="#fff" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            <circle cx="50" cy="50" r="5" fill="#fff" />
+          </svg>
+          <span className="hidden sm:inline">XavierLabs</span>
+        </button>
 
-      {/* Template Gallery — shown when canvas is empty */}
-      {showTemplates && (
-        <TemplateGallery
-          onLoad={({ components: newComps, wires: newWires, code: newCode }) => {
-            setComponents(newComps);
-            setWires(newWires);
-            setCode(newCode);
-            setShowTemplates(false);
-          }}
-          onDismiss={() => setShowTemplates(false)}
-        />
+        <nav className="flex gap-0.5" aria-label="Sections">
+          {tabs.map(([v, label]) => (
+            <button key={v} onClick={() => setView(v)} aria-current={view === v ? 'page' : undefined}
+              className={`relative h-9 rounded-md px-3 text-sm font-medium transition-colors ${view === v ? 'text-ink' : 'text-muted hover:bg-paper hover:text-ink'}`}>
+              {label}
+              {view === v && <span className="absolute inset-x-3 -bottom-[9px] h-0.5 rounded-full bg-ink" aria-hidden="true" />}
+            </button>
+          ))}
+        </nav>
+
+        {view === 'build' && (
+          <>
+            <span className="hidden h-6 w-px bg-line md:block" />
+            <input value={project.name} onChange={e => update(p => ({ ...p, name: e.target.value }), { key: 'name' })} aria-label="Project name"
+              className="hidden h-9 min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-2 text-sm font-semibold hover:border-line focus:border-ink focus:outline-none md:block md:max-w-72" />
+            <span className="flex-1" />
+            <div className="flex items-center gap-1.5">
+              <button className="btn btn-icon" onClick={openFile} aria-label="Open a project file" title="Open a project file"><FolderOpen size={16} /></button>
+              <button className="btn btn-icon" onClick={download} aria-label="Download this project" title="Download this project"><Download size={16} /></button>
+              <button className={`btn ${panel ? 'border-ink' : ''}`} onClick={() => setPanel(p => (p ? null : 'code'))} aria-pressed={!!panel}><Code2 size={16} /> <span className="hidden sm:inline">Code</span></button>
+              {running
+                ? <button className="btn btn-stop w-[11.5rem] justify-center" onClick={stop} title="Stop (Ctrl+Enter)"><Square size={13} fill="currentColor" /> Stop simulation</button>
+                : <button className="btn btn-go w-[11.5rem] justify-center" onClick={start} title="Start (Ctrl+Enter)"><Play size={15} fill="currentColor" /> Start simulation</button>}
+            </div>
+          </>
+        )}
+      </header>
+
+      {notice && (
+        <p role="alert" className="flex shrink-0 items-center gap-3 border-b border-ink bg-panel px-4 py-2 text-sm">
+          <span className="flex-1">{notice}</span>
+          <button className="tool" onClick={() => setNotice('')} aria-label="Dismiss"><X size={16} /></button>
+        </p>
       )}
 
-      {/* Keyboard Shortcuts Overlay */}
-      {isShortcutsOpen && <KeyboardShortcuts onClose={() => setIsShortcutsOpen(false)} />}
-
-      <div className="h-screen w-screen flex flex-col bg-[var(--bg-primary)] text-[var(--text-primary)] overflow-hidden font-sans">
-
-        {/* Top Navigation Bar */}
-        <div className="h-[52px] bg-[var(--bg-secondary)] flex-shrink-0 z-20 flex items-center px-4 relative border-b border-[var(--border-color)]">
-          <Toolbar
-            mcuModel={mcuModel}
-            setMcuModel={(newModel) => {
-              setMcuModel(newModel);
-              setComponents(prev => {
-                const filtered = prev.filter(c => c.type !== 'mcu');
-                const newMcu = createComponentPreset('mcu', newModel);
-                return [newMcu, ...filtered];
-              });
-              addToast('info', `Switched board to ${newModel === 'uno' ? 'Arduino Uno R3' : 'ESP32 DevKit v1'}`);
-            }}
-            selectedWireColor={selectedWireColor}
-            setSelectedWireColor={setSelectedWireColor}
-            simulationState={simulationState}
-            onRunSimulation={handleRunSimulation}
-            onOpenSettings={() => setIsSettingsOpen(true)}
-            onExport={handleExport}
-            onImport={handleImport}
-            onClearCanvas={handleClearCanvas}
-            onOpenSearch={() => setIsSearchOpen(true)}
-          />
-        </div>
-
-        {/* Main Content Area: Classic Docked IDE Layout */}
-        <div className="flex flex-1 overflow-hidden">
-          
-          {/* 1. Activity Bar (Far Left) */}
-          <div className="w-[52px] bg-[var(--bg-secondary)] border-r border-[var(--border-color)] flex flex-col items-center py-2 space-y-2 flex-shrink-0 z-10">
-            <SidebarButton
-              icon={Grid3X3} label="Component Library"
-              active={activeLeftPanel === 'components'}
-              onClick={() => setActiveLeftPanel(p => p === 'components' ? null : 'components')}
-            />
-            <div className="w-6 h-px bg-[var(--border-color)] my-1" />
-            <SidebarButton
-              icon={Code} label="Code Editor"
-              active={activeBottomPanel === 'editor' && !isEditorMinimized}
-              onClick={() => {
-                if (activeBottomPanel === 'editor') {
-                  if (isEditorMinimized) {
-                    setIsEditorMinimized(false);
-                  } else {
-                    setActiveBottomPanel(null);
-                  }
-                } else {
-                  setActiveBottomPanel('editor');
-                  setIsEditorMinimized(false);
-                  setIsEditorMaximized(false);
-                }
-              }}
-            />
-            <SidebarButton
-              icon={Terminal} label="Serial Monitor / Terminal"
-              active={activeBottomPanel === 'instruments' && instrumentTab === 'Serial Monitor' && !isInstrumentsMinimized}
-              onClick={() => {
-                if (activeBottomPanel === 'instruments' && instrumentTab === 'Serial Monitor') {
-                  if (isInstrumentsMinimized) {
-                    setIsInstrumentsMinimized(false);
-                  } else {
-                    setActiveBottomPanel(null);
-                  }
-                } else {
-                  setActiveBottomPanel('instruments');
-                  setInstrumentTab('Serial Monitor');
-                  setIsInstrumentsMinimized(false);
-                  setIsInstrumentsMaximized(false);
-                }
-              }}
-            />
-            <SidebarButton
-              icon={BarChart3} label="Oscilloscope Waveforms"
-              active={activeBottomPanel === 'instruments' && instrumentTab === 'Oscilloscope' && !isInstrumentsMinimized}
-              onClick={() => {
-                if (activeBottomPanel === 'instruments' && instrumentTab === 'Oscilloscope') {
-                  if (isInstrumentsMinimized) {
-                    setIsInstrumentsMinimized(false);
-                  } else {
-                    setActiveBottomPanel(null);
-                  }
-                } else {
-                  setActiveBottomPanel('instruments');
-                  setInstrumentTab('Oscilloscope');
-                  setIsInstrumentsMinimized(false);
-                  setIsInstrumentsMaximized(false);
-                }
-              }}
-            />
-            <SidebarButton
-              icon={Gauge} label="Multimeter (Pin Voltages)"
-              active={activeBottomPanel === 'instruments' && instrumentTab === 'Multimeter' && !isInstrumentsMinimized}
-              onClick={() => {
-                if (activeBottomPanel === 'instruments' && instrumentTab === 'Multimeter') {
-                  if (isInstrumentsMinimized) {
-                    setIsInstrumentsMinimized(false);
-                  } else {
-                    setActiveBottomPanel(null);
-                  }
-                } else {
-                  setActiveBottomPanel('instruments');
-                  setInstrumentTab('Multimeter');
-                  setIsInstrumentsMinimized(false);
-                  setIsInstrumentsMaximized(false);
-                }
-              }}
-            />
-            <SidebarButton
-              icon={Bug} label="Hardware Debugger"
-              active={activeBottomPanel === 'instruments' && instrumentTab === 'Debugger' && !isInstrumentsMinimized}
-              badge={debuggerAlerts.filter(a => a.type === 'error').length}
-              onClick={() => {
-                if (activeBottomPanel === 'instruments' && instrumentTab === 'Debugger') {
-                  if (isInstrumentsMinimized) {
-                    setIsInstrumentsMinimized(false);
-                  } else {
-                    setActiveBottomPanel(null);
-                  }
-                } else {
-                  setActiveBottomPanel('instruments');
-                  setInstrumentTab('Debugger');
-                  setIsInstrumentsMinimized(false);
-                  setIsInstrumentsMaximized(false);
-                }
-              }}
-            />
-            <div className="flex-1" />
-            <SidebarButton
-              icon={HelpCircle} label="Keyboard Shortcuts (?)"
-              active={isShortcutsOpen}
-              onClick={() => setIsShortcutsOpen(s => !s)}
-            />
-            <SidebarButton
-              icon={Zap} label="Power Analyzer"
-              active={activeRightPanel === 'power'}
-              onClick={() => setActiveRightPanel(p => p === 'power' ? null : 'power')}
-            />
-            <SidebarButton
-              icon={Bot} label="AI Copilot"
-              active={activeRightPanel === 'copilot'}
-              onClick={() => setActiveRightPanel(p => p === 'copilot' ? null : 'copilot')}
-            />
-            <SidebarButton
-              icon={BookOpen} label="Datasheets"
-              active={activeRightPanel === 'datasheets'}
-              onClick={() => setActiveRightPanel(p => p === 'datasheets' ? null : 'datasheets')}
-            />
-          </div>
-
-          {/* 2. Left Sidebar Panel (Docked & Resizable) */}
-          {activeLeftPanel && (
-            <div
-              style={{ width: `${sidebarWidth}px` }}
-              className="bg-[var(--bg-secondary)] border-r border-[var(--border-color)] flex flex-col flex-shrink-0 z-10 relative group/sidebar"
-            >
-              {/* Drag handle to lengthen / shorten Component Library */}
-              <div
-                onMouseDown={handleSidebarMouseDown}
-                className={`absolute top-0 right-0 w-1.5 h-full cursor-col-resize hover:bg-white/30 transition-colors z-20 ${
-                  isResizingSidebar ? 'bg-white/50' : ''
-                }`}
-                title="Drag to resize component library"
-              />
-              {activeLeftPanel === 'components' && (
-                <ComponentLibrary
-                  onAddComponent={(c) => {
-                    setComponents(prev => [...prev, c]);
-                    addToast('info', `${c.name} added to canvas`);
-                  }}
-                />
-              )}
+      <main className="min-h-0 flex-1">
+        {view === 'build' && (
+          <div className="flex h-full min-h-0 flex-col lg:flex-row">
+            <div className="min-h-0 min-w-0 flex-1">
+              <Workbench project={project} update={update} running={running} seconds={seconds} live={live} notes={notes}
+                voltageAt={r => sim.current?.voltageAt(r) ?? 0} fitKey={fitKey}
+                canUndo={hist.past.length > 0} canRedo={hist.future.length > 0} onUndo={undo} onRedo={redo}
+                onLearn={t => { setDiscover(t); setView('discover'); }} />
             </div>
-          )}
-
-          {/* 3. Center Area (Canvas + Bottom Panel) */}
-          <div className="flex-1 flex flex-col overflow-hidden relative z-0 bg-[var(--bg-primary)]">
-            {/* Canvas */}
-            <div className="flex-1 relative overflow-hidden">
-              <CircuitCanvas
-                components={components}
-                wires={wires}
-                setComponents={setComponents}
-                setWires={setWires}
-                simulationState={simulationState}
-                selectedWireColor={selectedWireColor}
-              />
-            </div>
-
-            {/* Bottom Panel (Docked) */}
-            {activeBottomPanel && (
-              <div 
-                style={{ 
-                  height: ((activeBottomPanel === 'editor' && isEditorMaximized) || (activeBottomPanel === 'instruments' && isInstrumentsMaximized))
-                    ? '100%' 
-                    : ((activeBottomPanel === 'editor' && isEditorMinimized) || (activeBottomPanel === 'instruments' && isInstrumentsMinimized))
-                      ? '36px'
-                      : `${bottomPanelHeight}px`
-                }}
-                className={`flex flex-col border-t border-[var(--border-color)] bg-[var(--bg-secondary)] z-10 transition-all relative ${
-                  ((activeBottomPanel === 'editor' && isEditorMaximized) || (activeBottomPanel === 'instruments' && isInstrumentsMaximized))
-                    ? 'absolute inset-0' : ''
-                }`}
-              >
-                {/* Drag handle to resize Bottom Panel */}
-                {!((activeBottomPanel === 'editor' && (isEditorMaximized || isEditorMinimized)) || (activeBottomPanel === 'instruments' && (isInstrumentsMaximized || isInstrumentsMinimized))) && (
-                  <div
-                    onMouseDown={handleBottomPanelMouseDown}
-                    className={`absolute top-0 left-0 w-full h-1.5 cursor-row-resize hover:bg-white/30 transition-colors z-20 ${
-                      isResizingBottom ? 'bg-white/50' : ''
-                    }`}
-                    title="Drag to resize height"
-                  />
-                )}
-                
-                {activeBottomPanel === 'editor' && (
-                  <EditorPanel
-                    code={code}
-                    setCode={setCode}
-                    onClose={() => setActiveBottomPanel(null)}
-                    mcuModel={mcuModel}
-                    onRun={handleRunSimulation}
-                    isRunning={simulationState.isPlaying}
-                    isMaximized={isEditorMaximized}
-                    isMinimized={isEditorMinimized}
-                    onToggleMaximize={() => setIsEditorMaximized(!isEditorMaximized)}
-                    onToggleMinimize={() => setIsEditorMinimized(!isEditorMinimized)}
-                  />
-                )}
-                {activeBottomPanel === 'instruments' && (
-                  <InstrumentationStudio
-                    onClose={() => setActiveBottomPanel(null)}
-                    logs={simulationState.logs}
-                    oscilloscopeSamples={oscilloscopeSamples}
-                    debuggerAlerts={debuggerAlerts}
-                    pinVoltages={simulationState.pinVoltages}
-                    isMaximized={isInstrumentsMaximized}
-                    isMinimized={isInstrumentsMinimized}
-                    onToggleMaximize={() => setIsInstrumentsMaximized(!isInstrumentsMaximized)}
-                    onToggleMinimize={() => setIsInstrumentsMinimized(!isInstrumentsMinimized)}
-                    activeTab={instrumentTab}
-                    setActiveTab={setInstrumentTab}
-                  />
-                )}
-              </div>
+            {panel && (
+              <>
+                <div role="separator" aria-orientation="vertical" aria-label="Resize code panel" tabIndex={0}
+                  aria-valuenow={panelW} aria-valuemin={340} aria-valuemax={760}
+                  onPointerDown={startResize}
+                  onKeyDown={e => { if (e.key === 'ArrowLeft') setPanelW(w => Math.min(760, w + 24)); if (e.key === 'ArrowRight') setPanelW(w => Math.max(340, w - 24)); }}
+                  className="group relative hidden w-0 cursor-col-resize lg:block">
+                  <span className="absolute inset-y-0 -left-1.5 w-3 group-hover:bg-ink/10 group-focus-visible:bg-ink/20" />
+                </div>
+                <div className="h-[46%] shrink-0 border-t border-line lg:h-auto lg:w-[var(--pw)] lg:border-t-0" style={{ '--pw': `${panelW}px` } as React.CSSProperties}>
+                  <SidePanel tab={panel} setTab={setPanel} project={project} setCode={code => { update(p => ({ ...p, code }), { key: 'code' }); setProblem(null); }}
+                    running={running} hasBoard={hasBoard} problem={problem} serial={serial} onClearSerial={() => setSerial('')}
+                    onSend={t => sim.current?.send(t)} notes={notes} onClose={() => setPanel(null)} />
+                </div>
+              </>
             )}
           </div>
-
-          {/* 4. Right Sidebar Panel (Docked) */}
-          {activeRightPanel && (
-            <div 
-              style={{ width: `${rightPanelWidth}px` }}
-              className="bg-[var(--bg-secondary)] border-l border-[var(--border-color)] flex flex-col flex-shrink-0 z-10 relative group/rightbar"
-            >
-              {/* Drag handle to resize Right Panel */}
-              <div
-                onMouseDown={handleRightPanelMouseDown}
-                className={`absolute top-0 left-0 w-1.5 h-full cursor-col-resize hover:bg-white/30 transition-colors z-20 ${
-                  isResizingRight ? 'bg-white/50' : ''
-                }`}
-                title="Drag to resize right panel"
-              />
-              
-              <button
-                onClick={() => setActiveRightPanel(null)}
-                className="absolute top-3 right-3 z-20 p-1.5 rounded-md text-[var(--text-muted)] hover:text-white hover:bg-[var(--bg-active)] transition-colors"
-              >
-                <X size={14} />
-              </button>
-              {activeRightPanel === 'copilot' && (
-                <AICopilot
-                  code={code}
-                  components={components}
-                  wires={wires}
-                  mcuModel={mcuModel}
-                />
-              )}
-              {activeRightPanel === 'power' && (
-                <PowerAnalyzer
-                  components={components}
-                  isPlaying={simulationState.isPlaying}
-                />
-              )}
-              {activeRightPanel === 'datasheets' && <Datasheets />}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {isSettingsOpen && (
-        <SettingsModal 
-          isOpen={isSettingsOpen}
-          onClose={() => setIsSettingsOpen(false)} 
-          zIndex={100}
-          onFocus={() => {}}
-        />
-      )}
-
-      <CommandPalette
-        isOpen={isSearchOpen}
-        onClose={() => setIsSearchOpen(false)}
-        onAddComponent={(comp) => {
-          setComponents(prev => [...prev, comp]);
-          addToast('info', `${comp.name} added to canvas`);
-        }}
-        onRunSimulation={handleRunSimulation}
-        isRunning={simulationState.isPlaying}
-        onClearCanvas={handleClearCanvas}
-        onExport={handleExport}
-        onImport={handleImport}
-        onOpenPanel={(panel, tab) => {
-          if (panel === 'editor') {
-            setActiveBottomPanel('editor');
-            setIsEditorMinimized(false);
-          } else if (panel === 'instruments') {
-            setActiveBottomPanel('instruments');
-            if (tab) setInstrumentTab(tab);
-            setIsInstrumentsMinimized(false);
-          } else {
-            setActiveRightPanel(panel);
-          }
-        }}
-      />
-    </>
+        )}
+        {view === 'discover' && (
+          <Suspense fallback={<p className="p-8 text-sm text-muted">Loading the 3D explorer…</p>}>
+            <Discover type={discover} onPick={setDiscover} onOpenStarter={openStarter} />
+          </Suspense>
+        )}
+        {view === 'home' && (
+          <Home current={resumable ? project : null} onContinue={() => setView('build')} onOpen={openStarter}
+            onBlank={() => open(blankProject())} onDiscover={() => setView('discover')} />
+        )}
+      </main>
+    </div>
   );
 }
-
-// ---- Sidebar Button Component ----
-interface SidebarButtonProps {
-  icon: React.FC<{ size?: number; strokeWidth?: number }>;
-  label: string;
-  active: boolean;
-  onClick: () => void;
-  badge?: number;
-}
-
-const SidebarButton: React.FC<SidebarButtonProps> = ({ icon: Icon, label, active, onClick, badge }) => {
-  return (
-    <button
-      onClick={onClick}
-      title={label}
-      className={`relative w-10 h-10 flex items-center justify-center rounded-lg transition-colors ${
-        active 
-          ? 'text-white bg-[var(--bg-active)] border border-[var(--border-color)]' 
-          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
-      }`}
-    >
-      <Icon size={24} strokeWidth={1.5} />
-      {badge !== undefined && badge > 0 && (
-        <span className="absolute top-2 right-2 bg-red-500 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center shadow-md">
-          {badge}
-        </span>
-      )}
-    </button>
-  );
-};
-
-export default App;

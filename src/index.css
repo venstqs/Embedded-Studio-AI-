@@ -1,105 +1,132 @@
 @import "tailwindcss";
 
+/*
+  XavierLabs look: black and white, like the logo. The interface stays
+  monochrome so the only color on screen is the electronics: LEDs, wires,
+  resistor bands. Color always means something about the circuit.
+*/
 @theme {
-  --font-sans: 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
-  
-  --color-cyber-cyan: #06b6d4;
-  --color-cyber-red: #ef4444;
-  --color-cyber-amber: #f59e0b;
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-display: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --color-paper: #f4f4f5;
+  --color-grid: #e4e4e7;
+  --color-panel: #ffffff;
+  --color-line: #e4e4e7;
+  --color-ink: #09090b;
+  --color-ink-2: #27272a;
+  --color-muted: #52525b;
+  --color-go: #09090b;
+  --color-stop: #09090b;
+  --color-amber: #09090b;
+  --color-link: #09090b;
 }
 
-:root {
-  --font-sans: 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
-  
-  /* Deep obsidian black */
-  --bg-primary: #09090b; 
-  /* Panels and surfaces */
-  --bg-secondary: #121215;
-  
-  /* Active and hover states */
-  --bg-active: #1c1c21;
-  --bg-hover: #27272a;
-  
-  /* Subtle border/dividers (No heavy strokes) */
-  --border-color: #1f1f23;
-  --border-light: #27272a;
-  --border-active: #3f3f46;
-  
-  /* Pure crisp typography */
-  --text-primary: #ffffff;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
-  
-  /* Monochrome accents with subtle indicator colors */
-  --color-cyan: #ffffff; 
-  --color-red: #ef4444;
-  --color-amber: #f59e0b;
+@layer base {
+  html, body, #root { height: 100%; }
+
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    background: var(--color-paper);
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.01em; }
+
+  button { cursor: pointer; font: inherit; color: inherit; }
+  button:disabled { cursor: not-allowed; opacity: 0.5; }
+
+  :focus-visible { outline: 2px solid var(--color-link); outline-offset: 2px; border-radius: 4px; }
 }
 
-body {
-  margin: 0;
-  font-family: var(--font-sans);
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  overflow: hidden; /* Fixed IDE layout */
-  -webkit-font-smoothing: antialiased;
+@layer components {
+  /* Graph paper: fine lines every 12 px (one breadboard hole), bold every 60 */
+  .workplane {
+    background-color: #fff;
+    touch-action: none;
+    user-select: none;
+  }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    height: 2.25rem; padding: 0 0.85rem; border-radius: 0.6rem;
+    border: 1px solid var(--color-line); background: var(--color-panel);
+    font-size: 0.875rem; font-weight: 500; white-space: nowrap;
+    transition: background-color 0.12s, border-color 0.12s;
+  }
+  .btn:hover:not(:disabled) { background: #f4f4f5; border-color: #a1a1aa; }
+  .btn-ink { background: var(--color-ink); border-color: var(--color-ink); color: #fff; }
+  .btn-ink:hover:not(:disabled) { background: var(--color-ink-2); border-color: var(--color-ink-2); }
+  .btn-go { background: var(--color-go); border-color: var(--color-go); color: #fff; font-weight: 600; }
+  .btn-go:hover:not(:disabled) { background: #27272a; border-color: #27272a; }
+  .btn-stop { background: #fff; border-color: var(--color-ink); box-shadow: inset 0 0 0 1px var(--color-ink); color: var(--color-ink); font-weight: 600; }
+  .btn-stop:hover:not(:disabled) { background: #f4f4f5; border-color: var(--color-ink); }
+  .btn-icon { width: 2.25rem; padding: 0; justify-content: center; }
+
+  .card { background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 0.9rem; }
+  .float { background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 0.9rem; box-shadow: 0 8px 24px -12px rgb(0 0 0 / 0.3); }
+
+  input[type='range'] { accent-color: var(--color-ink); width: 100%; }
+
+  .field {
+    width: 100%; height: 2.25rem; padding: 0 0.65rem; border-radius: 0.5rem;
+    border: 1px solid var(--color-line); background: #fff; font-size: 0.875rem;
+  }
+  .field:focus { border-color: var(--color-ink); outline: none; }
+
+  .btn-lg { height: 3rem; padding: 0 1.25rem; font-size: 1rem; border-radius: 0.75rem; }
+
+  /* Toolbar icon buttons */
+  .tool {
+    display: inline-grid; place-items: center; width: 2rem; height: 2rem; border-radius: 0.5rem;
+    color: var(--color-ink); transition: background-color 0.12s;
+  }
+  .tool:hover:not(:disabled) { background: var(--color-paper); }
+  .tool:disabled { opacity: 0.3; }
+
+  /* Keyboard key */
+  .kbd {
+    display: inline-flex; align-items: center; justify-content: center; min-width: 1.5rem; height: 1.5rem;
+    padding: 0 0.4rem; border: 1px solid var(--color-line); border-bottom-width: 2px; border-radius: 0.375rem;
+    background: #fff; font-family: var(--font-mono); font-size: 0.75rem; font-weight: 500;
+  }
+
+  /* Part tiles in the drawer */
+  .tile {
+    display: flex; flex-direction: column; align-items: center; gap: 0.25rem; padding: 0.5rem 0.25rem 0.4rem;
+    border: 1px solid transparent; border-radius: 0.75rem; text-align: center; font-size: 0.75rem; line-height: 1.15;
+    touch-action: pan-x pan-y; user-select: none; cursor: grab;
+  }
+  .tile:hover:not(:disabled) { background: var(--color-paper); border-color: var(--color-line); }
+  .tile:active:not(:disabled) { cursor: grabbing; }
 }
 
-* {
-  box-sizing: border-box;
-}
+/* Code editor on ink */
+.code-area { font-family: var(--font-mono); font-size: 13px; line-height: 20px; }
+.code-area textarea { outline: none !important; }
+.code-area pre, .code-area textarea { white-space: pre !important; overflow-wrap: normal !important; word-break: normal !important; }
+.code-area .token.comment { color: #8b8b93; font-style: italic; }
+.code-area .token.keyword { color: #fff; font-weight: 600; }
+.code-area .token.string, .code-area .token.char { color: #b4b4bb; }
+.code-area .token.number, .code-area .token.boolean { color: #fff; }
+.code-area .token.function { color: #e4e4e7; text-decoration: underline; text-decoration-color: #52525b; text-underline-offset: 3px; }
+.code-area .token.macro, .code-area .token.directive { color: #b4b4bb; }
+.code-area .token.operator, .code-area .token.punctuation { color: #8b8b93; }
+.code-area .token.class-name { color: #fff; }
 
-/* Beautiful Canvas Grid */
-.canvas-bg {
-  background-color: var(--bg-primary);
-  background-image: 
-    radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
-  background-size: 24px 24px;
-}
+.scroll-thin { scrollbar-width: thin; scrollbar-color: #c4c4c9 transparent; }
+.scroll-dark { scrollbar-width: thin; scrollbar-color: #3f3f46 transparent; }
 
-/* Typography Utilities */
-.mono {
-  font-family: var(--font-mono);
-}
+/* Tutor answers */
+.prose-mini p { margin: 0 0 0.5rem; }
+.prose-mini pre { background: #18181b; color: #e4e4e7; padding: 0.6rem 0.7rem; border-radius: 0.5rem; overflow-x: auto; font-size: 12px; margin: 0 0 0.5rem; }
+.prose-mini code { font-family: var(--font-mono); font-size: 0.85em; }
+.prose-mini ul, .prose-mini ol { margin: 0 0 0.5rem; padding-left: 1.1rem; }
+.prose-mini h3, .prose-mini h4 { font-size: 0.95rem; margin: 0.4rem 0 0.3rem; }
 
-/* Sleek Buttons */
-.btn-primary {
-  @apply bg-white text-black font-medium hover:bg-gray-200 transition-colors duration-200 rounded-full px-4 py-2 text-sm;
-}
-
-.btn-danger {
-  @apply bg-[var(--color-red)] text-[#131314] font-medium hover:opacity-90 transition-colors duration-200 rounded-full px-4 py-2 text-sm;
-}
-
-/* Panel Utilities (Google Surface) */
-.panel-glass {
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 16px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2), 0 2px 4px -1px rgba(0, 0, 0, 0.1);
-}
-
-/* Solid Logo */
-.logo-text {
-  font-family: var(--font-sans);
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-/* Custom Webkit Scrollbar (Sleek) */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--border-active);
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
 }
