@@ -1,7 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
-import { BookOpen, Box, Check, Cpu, Download, Ellipsis, FilePlus, FolderOpen, GraduationCap, Keyboard, LoaderCircle, Moon, PanelRight, Play, Plus, Search, Square, Sun, X } from 'lucide-react';
+import { BookOpen, Box, Check, ClipboardList, Copy, Cpu, Download, Ellipsis, FilePlus, FolderOpen, GraduationCap, Keyboard, LoaderCircle, Moon, PanelRight, Play, Plus, Search, Square, Sun, X } from 'lucide-react';
 import type { Live, Note, PartType, Project } from './types';
-import { PARTS, PART_ORDER, isBoard } from './parts/catalog';
+import { PARTS, PART_ORDER, designators, isBoard, partValue } from './parts/catalog';
 import { ArtDefs } from './parts/PartArt';
 import { STARTERS } from './data/projects';
 import { Simulator } from './sim/simulator';
@@ -12,7 +12,7 @@ import type { Update } from './views/Workbench';
 import SidePanel from './views/SidePanel';
 import type { DockTab, Problem } from './views/SidePanel';
 import Home from './views/Home';
-import { CommandPalette, Logo, Menu, ShortcutsDialog } from './views/ui';
+import { CommandPalette, Dialog, Logo, Menu, ShortcutsDialog } from './views/ui';
 import type { Command } from './views/ui';
 
 const Discover = lazy(() => import('./views/Discover'));
@@ -113,6 +113,7 @@ export default function App() {
   const [panelW, setPanelW] = useState(() => readNumber(PANEL_W, 420));
   const [palette, setPalette] = useState(false);
   const [shortcuts, setShortcuts] = useState(false);
+  const [bom, setBom] = useState(false);
   const [addRequest, setAddRequest] = useState<{ type: PartType; n: number } | null>(null);
   const [tipsDone, setTipsDone] = useState<number[]>([]);
 
@@ -346,6 +347,7 @@ export default function App() {
       { id: 'new', group: 'Project', label: 'New blank project', icon: <FilePlus size={14} />, run: () => open(blankProject()) },
       { id: 'open', group: 'Project', label: 'Open a project file', icon: <FolderOpen size={14} />, run: openFile },
       { id: 'download', group: 'Project', label: 'Download this project', icon: <Download size={14} />, run: download },
+      { id: 'bom', group: 'Project', label: 'Parts list (Bill of Materials)', keywords: 'bom export csv components', icon: <ClipboardList size={14} />, run: () => setBom(true) },
       { id: 'keys', group: 'Help', label: 'Keyboard shortcuts', hint: '?', icon: <Keyboard size={14} />, run: () => setShortcuts(true) },
     );
     for (const s of saved) list.push({ id: `saved-${s.id}`, group: 'Your projects', label: s.project.name, keywords: 'open recent', icon: <Cpu size={14} />, run: () => openSaved(s.id) });
@@ -403,6 +405,7 @@ export default function App() {
               { label: 'New blank project', icon: <FilePlus size={14} />, run: () => open(blankProject()) },
               { label: 'Open a project file', icon: <FolderOpen size={14} />, run: openFile },
               { label: 'Download this project', icon: <Download size={14} />, run: download },
+              { label: 'Parts list (BOM)', icon: <ClipboardList size={14} />, run: () => setBom(true) },
               'divider',
               { label: 'Keyboard shortcuts', icon: <Keyboard size={14} />, hint: '?', run: () => setShortcuts(true) },
             ]} />
@@ -474,6 +477,7 @@ export default function App() {
 
       {palette && <CommandPalette commands={buildCommands()} onClose={() => setPalette(false)} />}
       {shortcuts && <ShortcutsDialog onClose={() => setShortcuts(false)} />}
+      {bom && <BomDialog project={project} onCopy={() => setToast({ text: 'Copied parts list as CSV' })} onClose={() => setBom(false)} />}
 
       {toast && (
         <div role="status" className="fixed bottom-10 left-1/2 z-[95] flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 rounded-lg bg-inverse py-1.5 pr-1.5 pl-3.5 text-[13px] text-on-inverse shadow-xl">
@@ -483,5 +487,59 @@ export default function App() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Bill of Materials: every part in the circuit, grouped by component & value, with CSV copy. */
+function BomDialog({ project, onCopy, onClose }: { project: Project; onCopy: () => void; onClose: () => void }) {
+  const refs = designators(project.parts);
+  const groups = new Map<string, { name: string; value: string; refs: string[] }>();
+  for (const p of project.parts) {
+    const name = PARTS[p.type].name;
+    const value = partValue(p);
+    const key = `${p.type}|${value}`;
+    const entry = groups.get(key) ?? { name, value, refs: [] };
+    entry.refs.push(refs.get(p.id) ?? '');
+    groups.set(key, entry);
+  }
+  const rows = [...groups.values()];
+  const copyCsv = () => {
+    const esc = (s: string) => (/[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+    const csv = ['Qty,Designators,Part,Value', ...rows.map(r => [String(r.refs.length), r.refs.join(' '), r.name, r.value].map(esc).join(','))].join('\n');
+    navigator.clipboard?.writeText(csv).then(onCopy).catch(() => {});
+  };
+  return (
+    <Dialog title={`Parts list — ${project.name}`} onClose={onClose} width={560}>
+      <div className="scroll max-h-[60vh] overflow-auto">
+        {!rows.length ? (
+          <p className="px-4 py-8 text-center text-[13px] text-fg-3">No parts on the workplane yet.</p>
+        ) : (
+          <table className="w-full border-collapse text-left text-[12.5px]">
+            <thead>
+              <tr className="border-b border-line bg-surface-2 text-[11px] font-medium text-fg-3">
+                <th className="w-12 px-4 py-2">Qty</th>
+                <th className="px-3 py-2">Designators</th>
+                <th className="px-3 py-2">Part</th>
+                <th className="px-4 py-2 text-right">Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i} className="border-b border-line last:border-b-0">
+                  <td className="px-4 py-2 font-mono text-fg-2 tabular-nums">{r.refs.length}</td>
+                  <td className="px-3 py-2 font-mono text-[12px] text-fg">{r.refs.join(', ')}</td>
+                  <td className="px-3 py-2 text-fg">{r.name}</td>
+                  <td className="px-4 py-2 text-right font-mono text-[12px] text-fg-2">{r.value}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <div className="flex items-center justify-between border-t border-line bg-surface-2 px-4 py-2.5 text-[12px] text-fg-3">
+        <span>{project.parts.length} parts · {project.wires.length} jumper wires</span>
+        <button className="btn btn-sm" disabled={!rows.length} onClick={copyCsv}><Copy size={13} aria-hidden="true" /> Copy CSV</button>
+      </div>
+    </Dialog>
   );
 }
