@@ -104,4 +104,62 @@ export const LESSONS: Record<PartType, Lesson> = {
     facts: [['Coil', '5 volts'], ['Can switch', 'up to 10 amps'], ['Sound', 'an audible click']],
     watchOut: 'Mains electricity is dangerous. Practise with batteries and low-voltage lamps only.',
   },
+  capacitor: {
+    how: 'A capacitor is two metal plates with a thin insulator between them. Push current in and charge piles up on the plates; take the push away and the charge flows back out. The bigger the capacitor, the longer it takes to fill and to empty.',
+    wiring: ['The long leg (+) goes toward the positive side.', 'The stripe with − signs marks the negative leg.', 'How fast it charges depends on the resistor in front of it: resistance × capacitance gives the time in seconds.'],
+    facts: [['Measured in', 'farads (1 µF is a millionth)'], ['Time constant', 'R × C, so 1 kΩ × 1000 µF = 1 s'], ['This one is rated', '25 V']],
+    watchOut: 'This kind of capacitor has a + and a − side. Backwards, or above its voltage rating, a real one can bulge or pop.',
+  },
+  diode: {
+    how: 'A diode lets current flow one way and blocks it the other way, like a one-way valve in a pipe. Current goes from the anode to the cathode (the striped end), but never back.',
+    wiring: ['The silver stripe marks the cathode.', 'It takes about 0.7 V to push current through the right way.', 'Across a motor or relay it soaks up the voltage spike when the current switches off. That is called a flyback diode.'],
+    facts: [['Part number', '1N4007'], ['Forward drop', 'about 0.7 V'], ['Max current', '1 A'], ['Blocks up to', '1000 V backwards']],
+    watchOut: 'An LED is a diode too, but this one doesn’t light up. It is made for steering current, not for making light.',
+  },
+  npn: {
+    how: 'A transistor is a switch with no moving parts. A tiny current flowing into the base lets a current about a hundred times bigger flow from the collector to the emitter. That is how a 20 mA Arduino pin can control a motor that needs a quarter of an amp.',
+    wiring: ['Emitter to ground.', 'Base to an Arduino pin, through a 1 kΩ resistor.', 'Collector to the thing you want to switch. Its other end goes to power.'],
+    facts: [['Part number', '2N2222'], ['Gain', 'about 100 times'], ['Max collector current', '600 mA'], ['Starts to turn on at', 'about 0.65 V on the base']],
+    watchOut: 'Always put a resistor on the base. Without one the base takes far too much current and the transistor burns out.',
+  },
+  motor: {
+    how: 'Inside a DC motor, current flows through coils of wire that sit between magnets. The magnetic push spins the shaft. More current means more speed, and reversing the current reverses the direction.',
+    wiring: ['A motor needs more current than a pin can give, so switch it with a transistor.', 'Put a diode across the motor, striped end to the + side, to protect the transistor.', 'Control its speed with analogWrite() on the transistor’s base.'],
+    facts: [['Typical voltage', '3 to 6 V'], ['Current when running', '100 to 300 mA'], ['Speed', 'thousands of turns a minute']],
+    watchOut: 'Never wire a motor straight to a digital pin. It pulls far more than the 40 mA a pin can safely give.',
+  },
+  seg7: {
+    how: 'A 7-segment display is eight LEDs in one package: seven bars shaped like an 8, plus a decimal point. All of them share one negative pin (the common cathode) and each bar has its own pin. Light the right bars and you can show any digit.',
+    wiring: ['The two middle pins are the common cathode. Connect them to ground through a resistor.', 'Each segment pin goes to its own Arduino pin.', 'Segments are named a to g, clockwise from the top, with g across the middle.'],
+    facts: [['Segments', '7 plus a decimal point'], ['Type', 'common cathode'], ['Each segment needs', 'about 1.8 V and 10 mA']],
+    watchOut: 'With one shared resistor, digits that light more segments look dimmer. One resistor per segment keeps them even.',
+  },
+  switch: {
+    how: 'A slide switch joins its middle pin to either the left pin or the right pin, depending on where the slider sits. Unlike a push button, it stays where you leave it.',
+    wiring: ['Your circuit connects to the middle pin.', 'Wire one side pin to power. Slide toward it to switch on.', 'In code, read it like a button with INPUT_PULLUP.'],
+    facts: [['Type', 'SPDT: single pole, double throw'], ['Positions', '2']],
+    watchOut: 'The middle pin is the one that moves between sides. If nothing is wired to it, sliding the switch does nothing.',
+  },
+  multimeter: {
+    how: 'A multimeter is the electronics detective. In V mode it measures the voltage between its two probes. In mA mode it measures the current flowing through it. In Ω mode it measures resistance by pushing a tiny current of its own through the part.',
+    wiring: ['Voltage: touch the probes across the part, red on the + side.', 'Current: break the circuit and put the meter in the gap, so the current has to flow through it.', 'Resistance: take the part out of the circuit or disconnect the power, then touch both ends.'],
+    facts: [['Voltage range', 'up to 200 V'], ['Current range', 'up to 10 A'], ['Probe colors', 'red for +, black for COM']],
+    watchOut: 'In mA mode the meter is almost a plain wire. Putting it straight across a battery or the 5V pin makes a short circuit.',
+  },
+  scope: {
+    how: 'An oscilloscope draws a graph of voltage over time, thousands of times a second. It shows things a multimeter can’t, like the fast on-off pulses behind analogWrite(), or a capacitor slowly charging up.',
+    wiring: ['Clip GND to the circuit’s ground.', 'Wire CH1 to the point you want to see.', 'Change the time per division to zoom in or out in time, and the volts per division to make the wave taller or shorter.'],
+    facts: [['Screen', '10 divisions across, 8 up'], ['Time per division', '0.5 ms to 1 s'], ['Input', '10 MΩ, so it barely disturbs the circuit']],
+    watchOut: 'The scope measures against its GND clip. Clip it anywhere other than ground and every reading shifts.',
+  },
+  ne555: {
+    how: 'The 555 timer is an eight-pin chip with two voltage comparators and a memory bit inside. It watches the voltage on a charging capacitor: when it reaches two-thirds of the supply voltage it flips the output off and drains the capacitor; when it falls to one-third it flips back on. That simple loop makes a steady blink or tone with no microcontroller at all.',
+    wiring: [
+      'Pin 8 (VCC) to power (+5 V or 9 V) and pin 1 (GND) to ground. Tie pin 4 (RESET) to VCC so it stays awake.',
+      'To blink on its own (astable): wire R1 from VCC to pin 7 (DISCH), R2 from pin 7 to pins 6 and 2 (joined together), and a capacitor from pin 2 to GND.',
+      'Pin 3 (OUT) drives your LED (through a resistor) or buzzer.',
+    ],
+    facts: [['Part number', 'NE555 (DIP-8)'], ['Supply voltage', '4.5 to 16 V'], ['Thresholds', '⅓ and ⅔ of VCC'], ['Max output current', '200 mA']],
+    watchOut: 'The notch on the left end marks pin 1 at the bottom-left. Pin numbers run anticlockwise around the chip, ending with pin 8 at the top-left.',
+  },
 };

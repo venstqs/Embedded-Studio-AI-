@@ -140,7 +140,7 @@ void loop() {
   {
     id: 'dimmer', title: 'Knob dimmer', level: 'Next steps',
     summary: 'Turn a potentiometer to fade an LED with PWM.',
-    tryIt: ['Click the knob and drag its slider while it runs.', 'Open the Serial monitor to watch the numbers change.'],
+    tryIt: ['Click the knob and drag its slider while it runs.', 'Switch the Serial monitor to Graph and turn the knob.'],
     parts: ['uno', 'potentiometer', 'led', 'resistor'],
     build: () => {
       const b = new Bench('uno');
@@ -461,6 +461,254 @@ void loop() {
   Serial.print(humidity);
   Serial.println(" %");
   delay(1000);
+}
+`);
+    },
+  },
+  {
+    id: 'measure', title: 'Measure a voltage', level: 'Start here',
+    summary: 'Two resistors split a battery’s 9 V between them. A multimeter shows you exactly how.',
+    tryIt: [
+      'Press Start: two equal resistors split the 9 V in half.',
+      'Stop, click the bottom resistor, change it to 2.2 kΩ and start again. Why does the voltage go up?',
+      'Hover the wires while it runs. The same current flows through both resistors.',
+    ],
+    parts: ['battery', 'resistor', 'multimeter'],
+    build: () => {
+      const b = new Bench(null);
+      b.put('bat', 'battery', '+', [276, 264]);
+      b.wire('bat:+', 'bp1', RED);
+      b.wire('bat:-', 'bn1', BLACK);
+      b.put('r1', 'resistor', '1', 'g6', { ohms: 1000 });
+      b.put('r2', 'resistor', '1', 'h10', { ohms: 1000 });
+      b.wire('bp6', 'j6', RED);
+      b.wire('j14', 'bn14', BLACK);
+      b.put('meter', 'multimeter', 'COM', [492, 300], { mode: 'V' });
+      b.wire('meter:V', 'i10', RED);
+      b.wire('meter:COM', 'bn18', BLACK);
+      return b.done('Measure a voltage', `// No board in this circuit, so there is no code to run.
+// Press "Start simulation" and read the multimeter.
+void setup() {}
+void loop() {}
+`);
+    },
+  },
+  {
+    id: 'scope', title: 'See PWM on an oscilloscope', level: 'Next steps',
+    summary: 'analogWrite() flicks a pin on and off 490 times a second. The oscilloscope lets you see it happen.',
+    tryIt: [
+      'Watch the pulses on the scope get wider as the LED gets brighter.',
+      'Click the scope and set it to 200 ms per division. The pulses blur into a band, just like your eye blurs them.',
+      'Change both delay(60) lines to delay(10). The LED fades faster, and so do the pulses.',
+    ],
+    parts: ['uno', 'led', 'resistor', 'scope'],
+    build: () => {
+      const b = new Bench('uno');
+      b.led('led', 4, 'green', 'D9', ORANGE);
+      b.ground();
+      b.put('scope', 'scope', 'CH', [444, 300], { tdiv: 2, vdiv: 1 });
+      b.wire('scope:CH', 'i4', YELLOW);
+      b.wire('scope:GND', 'bn12', BLACK);
+      return b.done('See PWM on an oscilloscope', `const int LED_PIN = 9;
+
+void setup() {
+  pinMode(LED_PIN, OUTPUT);
+}
+
+void loop() {
+  // analogWrite doesn't make an in-between voltage.
+  // It switches the pin fully on and off 490 times a second.
+  // The longer each "on" pulse, the brighter the LED looks.
+  for (int duty = 0; duty <= 255; duty += 5) {
+    analogWrite(LED_PIN, duty);
+    delay(60);
+  }
+  for (int duty = 255; duty >= 0; duty -= 5) {
+    analogWrite(LED_PIN, duty);
+    delay(60);
+  }
+}
+`);
+    },
+  },
+  {
+    id: 'fade', title: 'Fade with a capacitor', level: 'Next steps',
+    summary: 'Charge a capacitor with a button, then watch it keep the LED glowing after you let go.',
+    tryIt: [
+      'Hold the button for a second, then let go. The LED fades out while the scope draws the curve.',
+      'Stop, change the capacitor to 100 µF and try again. Is the fade shorter or longer?',
+      'Change the 470 Ω resistor to 2.2 kΩ. The LED is dimmer, but how long does it glow now?',
+    ],
+    parts: ['battery', 'button', 'resistor', 'capacitor', 'led', 'scope'],
+    build: () => {
+      const b = new Bench(null);
+      b.put('bat', 'battery', '+', [276, 264]);
+      b.wire('bat:+', 'bp1', RED);
+      b.wire('bat:-', 'bn1', BLACK);
+      b.put('btn', 'button', '1a', 'e8');
+      b.wire('bp8', 'j8', RED);
+      b.put('r1', 'resistor', '1', 'h10', { ohms: 100 });
+      b.put('cap', 'capacitor', '+', 'g14', { uf: 1000 });
+      b.wire('j15', 'bn15', BLACK);
+      b.put('r2', 'resistor', '1', 'i14', { ohms: 470 });
+      b.put('led', 'led', 'A', 'h18', { color: 'red' });
+      b.wire('j19', 'bn19', BLACK);
+      b.put('scope', 'scope', 'CH', [444, 300], { tdiv: 500, vdiv: 2 });
+      b.wire('scope:CH', 'f14', YELLOW);
+      b.wire('scope:GND', 'bn23', BLACK);
+      return b.done('Fade with a capacitor', `// No board here: a battery, a button and a capacitor.
+// Press "Start simulation", hold the button, then let go.
+void setup() {}
+void loop() {}
+`);
+    },
+  },
+  {
+    id: 'ne555', title: 'Blink with a 555 timer', level: 'Next steps',
+    summary: 'Make an LED blink on its own with a 555 chip, two resistors and a capacitor—no microcontroller, no code.',
+    tryIt: [
+      'Watch the LED blink while the oscilloscope draws the square wave on pin 3.',
+      'Move the orange scope probe from pin 3 (j12) to the capacitor (d15) to see it charge and discharge between 3 V and 6 V.',
+      'Stop, change the capacitor to 10 µF and run again. Ten times smaller capacitor means ten times faster blinks.',
+    ],
+    parts: ['battery', 'ne555', 'resistor', 'capacitor', 'led', 'scope'],
+    build: () => {
+      const b = new Bench(null);
+      b.put('bat', 'battery', '+', [276, 264]);
+      b.wire('bat:+', 'bp1', RED);
+      b.wire('bat:-', 'bn1', BLACK);
+      b.wire('bp2', 'tp2', RED);
+      b.wire('bn3', 'tn3', BLACK);
+      b.put('u1', 'ne555', 'VCC', 'e10');
+      b.wire('a10', 'tp10', RED);
+      b.wire('j10', 'bn10', BLACK);
+      b.wire('i13', 'bp13', RED);
+      b.put('r1', 'resistor', '1', 'c7', { ohms: 10000 });
+      b.wire('a7', 'tp7', RED);
+      b.put('r2', 'resistor', '1', 'b11', { ohms: 10000 });
+      b.wire('d15', 'd12', YELLOW);
+      b.wire('a12', 'g11', GREEN);
+      b.put('cap', 'capacitor', '+', 'c15', { uf: 100 });
+      b.wire('a16', 'tn16', BLACK);
+      b.put('r3', 'resistor', '1', 'h12', { ohms: 470 });
+      b.put('led', 'led', 'A', 'g16', { color: 'red' });
+      b.wire('j17', 'bn17', BLACK);
+      b.put('scope', 'scope', 'CH', [444, 300], { tdiv: 500, vdiv: 2 });
+      b.wire('scope:CH', 'j12', ORANGE);
+      b.wire('scope:GND', 'bn23', BLACK);
+      return b.done('Blink with a 555 timer', `// No microcontroller, no code: the NE555 timer chip blinks the LED on its own.
+// Period ≈ 0.693 × (R1 + 2 × R2) × C ≈ 2.1 seconds.
+void setup() {}
+void loop() {}
+`);
+    },
+  },
+  {
+    id: 'motor', title: 'Motor speed control', level: 'Bigger builds',
+    summary: 'A transistor lets a tiny pin current switch a motor’s big current. Turn the knob to set the speed.',
+    tryIt: [
+      'Click the knob and drag its slider. The motor speeds up, and the dots on the wires show the current.',
+      'Hover the wire into the base, then the wire to the motor. A few mA controls a couple of hundred.',
+      'Delete the transistor and wire the motor straight to pin 9. Read the warning that appears.',
+    ],
+    parts: ['uno', 'npn', 'motor', 'diode', 'resistor', 'potentiometer'],
+    build: () => {
+      const b = new Bench('uno');
+      b.put('q1', 'npn', 'E', 'g8');
+      b.put('rb', 'resistor', '2', 'h9', { ohms: 1000 });
+      b.wire('board:D9', 'j5', ORANGE);
+      b.wire('j8', 'bn8', BLACK);
+      b.put('d1', 'diode', 'A', 'h10');
+      b.wire('j14', 'bp14', RED);
+      b.put('m1', 'motor', '-', [828, 180]);
+      b.wire('m1:-', 'j10', BLUE);
+      b.wire('m1:+', 'bp24', RED);
+      b.put('pot', 'potentiometer', '1', 'g17', { pos: 0.6 });
+      b.wire('j17', 'bp17', RED);
+      b.wire('j19', 'bn19', BLACK);
+      b.wire('j18', 'board:A0', GREEN);
+      b.power();
+      return b.done('Motor speed control', `const int KNOB_PIN = A0;
+const int MOTOR_PIN = 9;   // goes to the transistor's base, through 1 kΩ
+
+void setup() {
+  pinMode(MOTOR_PIN, OUTPUT);
+  Serial.begin(9600);
+}
+
+void loop() {
+  int knob = analogRead(KNOB_PIN);           // 0 to 1023
+  int speed = map(knob, 0, 1023, 0, 255);
+
+  // The pin only feeds the base a few mA.
+  // The transistor lets the motor's much bigger current through.
+  analogWrite(MOTOR_PIN, speed);
+
+  Serial.print("speed = ");
+  Serial.println(speed);
+  delay(100);
+}
+`);
+    },
+  },
+  {
+    id: 'counter', title: 'Count on a 7-segment display', level: 'Bigger builds',
+    summary: 'Light the right segments to show the digits 0 to 9, one every second.',
+    tryIt: [
+      'Make it count down from 9 instead of up.',
+      'Notice that 8 looks dimmer than 1. All the segments share one resistor, so they split its current.',
+      'Add patterns for A, b, C, d, E and F, and count in hexadecimal.',
+    ],
+    parts: ['uno', 'seg7', 'resistor'],
+    build: () => {
+      const b = new Bench('uno');
+      b.put('disp', 'seg7', 'g', 'd14');
+      b.put('rc', 'resistor', '1', 'j16', { ohms: 100 });
+      b.wire('i20', 'bn20', BLACK);
+      b.wire('board:D2', 'a17', ORANGE);
+      b.wire('board:D3', 'a18', YELLOW);
+      b.wire('board:D4', 'i17', GREEN);
+      b.wire('board:D5', 'i15', BLUE);
+      b.wire('board:D6', 'i14', VIOLET);
+      b.wire('board:D7', 'a15', ORANGE);
+      b.wire('board:D8', 'a14', YELLOW);
+      b.ground();
+      return b.done('Count on a 7-segment display', `// Which segments light up for each digit, as bits: g f e d c b a
+byte digits[10] = {
+  0b0111111, // 0
+  0b0000110, // 1
+  0b1011011, // 2
+  0b1001111, // 3
+  0b1100110, // 4
+  0b1101101, // 5
+  0b1111101, // 6
+  0b0000111, // 7
+  0b1111111, // 8
+  0b1101111  // 9
+};
+
+// Arduino pins wired to segments a, b, c, d, e, f, g
+int segmentPins[7] = {2, 3, 4, 5, 6, 7, 8};
+
+void showDigit(int n) {
+  for (int s = 0; s < 7; s++) {
+    digitalWrite(segmentPins[s], bitRead(digits[n], s));
+  }
+}
+
+void setup() {
+  for (int s = 0; s < 7; s++) {
+    pinMode(segmentPins[s], OUTPUT);
+  }
+  Serial.begin(9600);
+}
+
+void loop() {
+  for (int n = 0; n <= 9; n++) {
+    showDigit(n);
+    Serial.println(n);
+    delay(1000);
+  }
 }
 `);
     },
