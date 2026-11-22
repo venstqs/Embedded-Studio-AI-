@@ -3,7 +3,7 @@
 /*
   XavierLabs design system.
 
-  Monochrome by brand: the interface is black, white and greys, so the only
+  Monochrome by brand, matching the XavierLabs site (#0a0a0a, #161616, #f5f5f5, #a3a3a3): the interface is black, white and greys, so the only
   saturated colour on screen comes from the electronics themselves (LEDs,
   wires, resistor bands) and from three small status signals (ok, warn, bad).
 
@@ -14,26 +14,26 @@
 :root,
 [data-theme='dark'] {
   color-scheme: dark;
-  --app: #08080a;
-  --surface: #0f0f12;
-  --surface-2: #16161a;
-  --surface-3: #1e1e23;
-  --pop: #141418;
-  --seg-on: #27272d;
-  --canvas: #0b0b0d;
-  --grid: #222227;
+  --app: #0a0a0a;
+  --surface: #0f0f0f;
+  --surface-2: #161616;
+  --surface-3: #1f1f1f;
+  --pop: #141414;
+  --seg-on: #262626;
+  --canvas: #0b0b0b;
+  --grid: #232323;
   --mat: #15171a;
   --mat-line: rgb(255 255 255 / 0.05);
   --mat-ink: #80868f;
   --mat-ink-2: #5d636b;
   --mat-edge: #25282d;
-  --line: #1d1d22;
-  --line-2: #2b2b31;
-  --fg: #ededef;
-  --fg-2: #a1a1a9;
-  --fg-3: #6c6c75;
-  --inverse: #f4f4f5;
-  --on-inverse: #09090b;
+  --line: #1c1c1c;
+  --line-2: #2a2a2a;
+  --fg: #f5f5f5;
+  --fg-2: #a3a3a3;
+  --fg-3: #6b6b6b;
+  --inverse: #f5f5f5;
+  --on-inverse: #0a0a0a;
   --ok: #3dd68c;
   --warn: #f5a524;
   --bad: #ff5f5f;
@@ -42,10 +42,10 @@
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
   --scrim: rgb(0 0 0 / 0.55);
 
-  --code-bg: #0b0b0d;
+  --code-bg: #0b0b0b;
   --code-fg: #e4e4e7;
-  --code-gutter: #46464e;
-  --code-comment: #6c6c75;
+  --code-gutter: #474747;
+  --code-comment: #6b6b6b;
   --code-keyword: #fafafa;
   --code-string: #9fd8b4;
   --code-number: #f2c46d;
@@ -243,7 +243,7 @@
 
 /* ---- Code editor ---- */
 .code-area { font-family: var(--font-mono); font-size: 13px; line-height: 20px; background: var(--code-bg); color: var(--code-fg); }
-.code-area textarea { outline: none !important; caret-color: var(--fg); }
+.code-area textarea { outline: none !important; caret-color: var(--code-fg); }
 .code-area pre, .code-area textarea { white-space: pre !important; overflow-wrap: normal !important; word-break: normal !important; }
 .code-area .token.comment { color: var(--code-comment); font-style: italic; }
 .code-area .token.keyword { color: var(--code-keyword); font-weight: 600; }
@@ -252,6 +252,33 @@
 .code-area .token.function { color: var(--code-function); }
 .code-area .token.macro, .code-area .token.directive, .code-area .token.directive-hash { color: var(--code-macro); }
 .code-area .token.operator, .code-area .token.punctuation { color: var(--code-punct); }
+.code-area.wrap pre, .code-area.wrap textarea { white-space: pre-wrap !important; overflow-wrap: anywhere !important; }
+
+/* Code themes, chosen in Settings. "xavier" follows the app theme; the rest look the same in light and dark. */
+[data-code-theme='arduino'] {
+  --code-bg: #1f272a; --code-fg: #dae3e3; --code-gutter: #55636a; --code-comment: #7f8c8d; --code-keyword: #00979c;
+  --code-string: #7fcbcd; --code-number: #e2c08d; --code-function: #e67e22; --code-macro: #a8c256; --code-punct: #95a5a6;
+}
+[data-code-theme='midnight'] {
+  --code-bg: #0d1117; --code-fg: #e6edf3; --code-gutter: #484f58; --code-comment: #8b949e; --code-keyword: #ff7b72;
+  --code-string: #a5d6ff; --code-number: #79c0ff; --code-function: #d2a8ff; --code-macro: #ffa657; --code-punct: #8b949e;
+}
+[data-code-theme='paper'] {
+  --code-bg: #fbfaf7; --code-fg: #1b1b1b; --code-gutter: #b9b5ab; --code-comment: #8f8a80; --code-keyword: #1b1b1b;
+  --code-string: #0f7b45; --code-number: #a35200; --code-function: #2b4a9b; --code-macro: #7c3aed; --code-punct: #6f6a62;
+}
+[data-code-theme='contrast'] {
+  --code-bg: #000000; --code-fg: #ffffff; --code-gutter: #9a9a9a; --code-comment: #c0c0c0; --code-keyword: #ffd400;
+  --code-string: #7cfc00; --code-number: #00e5ff; --code-function: #ff9df5; --code-macro: #ff8c00; --code-punct: #ffffff;
+}
+[data-code-theme='arduino'] .code-area .token.keyword, [data-code-theme='midnight'] .code-area .token.keyword { font-weight: 500; }
+[data-code-theme] [role='log'] { color: var(--code-fg); }
+
+/* Interface density and motion, chosen in Settings. Spacing is in rem, so a smaller root tightens the whole layout. */
+html[data-density='compact'] { font-size: 14px; }
+html[data-motion='off'] *, html[data-motion='off'] *::before, html[data-motion='off'] *::after {
+  animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important;
+}
 .code-area .token.class-name { color: var(--code-keyword); }
 
 /* ---- Scrollbars ---- */
@@ -276,3 +303,24 @@
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* ---- Front page ---- */
+.reveal { opacity: 0; transform: translateY(14px); transition: opacity 0.7s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.reveal.in { opacity: 1; transform: none; }
+@keyframes hero-in { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+.hero-in { animation: hero-in 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+@keyframes marquee { to { transform: translateX(calc(-50% - 6px)); } }
+.marquee { animation: marquee 48s linear infinite; }
+.marquee-mask:hover .marquee { animation-play-state: paused; }
+.marquee-mask { mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent); -webkit-mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent); }
+@keyframes caret { 50% { opacity: 0; } }
+.type-caret { animation: caret 1s step-end infinite; }
+@keyframes scope-run { to { transform: translateX(-80px); } }
+.scope-run { animation: scope-run 1.6s linear infinite; }
+.iso-wrap { perspective: 900px; }
+.iso { transform: rotateX(52deg) rotateZ(-28deg) scale(0.92); transform-style: preserve-3d; transition: transform 0.8s cubic-bezier(0.2, 0.7, 0.2, 1); box-shadow: 0 30px 40px -18px rgb(0 0 0 / 0.55); }
+.bento:hover .iso { transform: rotateX(46deg) rotateZ(-22deg) scale(0.96); }
+.bento { transition: border-color 0.2s, opacity 0.7s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.bento:hover { border-color: var(--line-2); }
+@media (prefers-reduced-motion: reduce) { .reveal, .hero-in { opacity: 1 !important; transform: none !important; } }
+html[data-motion='off'] .reveal, html[data-motion='off'] .hero-in { opacity: 1 !important; transform: none !important; }

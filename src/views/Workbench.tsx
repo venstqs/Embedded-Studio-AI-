@@ -1,9 +1,20 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Box, ChevronDown, ChevronRight, Copy, Grid2x2, Keyboard, Lightbulb, Maximize2, Minus, MousePointerClick, Plus, Redo2, RotateCw, Search, Tag, Trash2, TriangleAlert, Undo2, X, Zap } from 'lucide-react';
-import type { Live, Note, Part, PartType, Project, Rot } from '../types';
-import { BOARDS, CAPACITORS, LED_COLORS, P, PARTS, PART_ORDER, designators, formatFarads, formatOhms, isBoard, makePart, newId, parseSI, partBounds, partValue, pinPos, pivot, ref, toWorld, wireGeom } from '../parts/catalog';
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalDistributeCenter, AlignStartHorizontal, AlignStartVertical,
+  AlignVerticalDistributeCenter, ArrowRight, Box, BoxSelect, Camera, ChevronDown, ChevronRight, CircleAlert, CircleCheck, ClipboardPaste, Copy, Download, FileCode,
+  Grid2x2, Hand, Image as ImageIcon, Info, Keyboard, Lightbulb, Map as MapIcon, Maximize2, Minus, MousePointer2, MousePointerClick, Plus, Redo2, Rotate3d, RotateCw,
+  Scissors, Search, ShieldCheck, Tag, Trash2, TriangleAlert, Undo2, X, Zap,
+} from 'lucide-react';
+import type { Live, Note, Part, PartType, Project, Rot, Wire } from '../types';
+import { BOARDS, CAPACITORS, LED_COLORS, P, PARTS, PART_ORDER, designators, formatFarads, formatOhms, isBoard, makePart, MM_PER_UNIT, newId, parseSI, partBounds, partValue, pinPos, pivot, ref, wireGeom } from '../parts/catalog';
 import { PartArt, PartThumb, WireArt } from '../parts/PartArt';
 import BenchMat from '../parts/BenchMat';
+import { buildNets } from '../sim/nets';
+import { checkCircuit, netlist } from '../sim/check';
+import type { Issue } from '../sim/check';
+import type { ViewPreset } from './Bench3D';
+
+const Bench3D = lazy(() => import('./Bench3D'));
 
 /** Change the project. `key` merges repeated edits (a drag, a slider) into one undo step; `skip` keeps it out of history. */
 export type Update = (fn: (p: Project) => Project, opt?: { key?: string; skip?: boolean }) => void;
@@ -32,10 +43,12 @@ interface Props {
   /** Progress through the starter's "things to try", shown as a chip that opens the guide. */
   guide: { done: number; total: number } | null;
   onOpenGuide: () => void;
+  /** Dark theme, for the 3D bench. */
+  dark: boolean;
 }
 
 interface View { x: number; y: number; k: number }
-type Sel = { kind: 'part' | 'wire'; id: string } | null;
+type Sel = { kind: 'parts'; ids: string[] } | { kind: 'wire'; id: string } | null;
 
 const WIRE_COLORS = ['#e5383b', '#22262e', '#f2801c', '#e9b400', '#1fa35b', '#2563eb', '#8b3fd9', '#f4f6f9'];
 const RESISTORS = [100, 220, 330, 470, 1000, 2200, 4700, 10000, 100000];
@@ -63,75 +76,69 @@ function flowSeconds(amps: number) {
 const snap = (v: number) => Math.round(v / P) * P;
 const thumbPart = (t: PartType): Part => ({ id: t, type: t, x: 0, y: 0, rot: 0, props: PARTS[t].defaults });
 
-/**
- * Which pins are joined by wires, breadboard strips and legs pushed into holes.
- * Shown while hovering, so students can see what a breadboard column really connects.
- */
-function connections(parts: Part[], wires: { from: string; to: string }[]) {
-  const parent = new Map<string, string>();
-  const find = (x: string): string => {
-    let r = x;
-    while (parent.get(r) !== r) r = parent.get(r)!;
-    let c = x;
-    while (parent.get(c) !== r) { const n = parent.get(c)!; parent.set(c, r); c = n; }
-    return r;
-  };
-  const join = (a: string, b: string) => { if (parent.has(a) && parent.has(b)) { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb); } };
-  const holes = new Map<string, string>();
-  const key = (x: number, y: number) => `${Math.round(x / 4)},${Math.round(y / 4)}`;
-  for (const part of parts) {
-    const strips = new Map<string, string>();
-    for (const pin of PARTS[part.type].pins) {
-      const r = ref(part.id, pin.id);
-      parent.set(r, r);
-      if (pin.strip) { const first = strips.get(pin.strip); if (first) join(r, first); else strips.set(pin.strip, r); }
-      if (part.type === 'breadboard') { const w = pinPos(part, pin); holes.set(key(w.x, w.y), r); }
-    }
-  }
-  for (const part of parts) {
-    if (part.type === 'breadboard') continue;
-    for (const pin of PARTS[part.type].pins) {
-      const w = pinPos(part, pin);
-      const hole = holes.get(key(w.x, w.y));
-      if (hole) join(ref(part.id, pin.id), hole);
-    }
-  }
-  for (const w of wires) join(w.from, w.to);
-  const members = new Map<string, string[]>();
-  for (const r of parent.keys()) { const root = find(r); const list = members.get(root); if (list) list.push(r); else members.set(root, [r]); }
-  return { group: (r: string) => (parent.has(r) ? members.get(find(r)) ?? [r] : [r]) };
-}
-
 const FG = { stroke: 'var(--fg)' } as const;
+const MODE_PREF = 'xavierlabs_bench_mode';
+const EXPORT_VARS = ['--fg', '--fg-2', '--fg-3', '--canvas', '--surface', '--surface-2', '--surface-3', '--line', '--line-2', '--mat', '--mat-line', '--mat-ink', '--mat-ink-2', '--mat-edge', '--warn', '--ok', '--bad', '--grid', '--pop', '--seg-on', '--app', '--inverse'];
+
+function download(name: string, blob: Blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+const fileName = (s: string) => (s.trim() || 'circuit').replace(/[^\w\- ]+/g, '').replace(/\s+/g, '-').toLowerCase();
+
+interface Clip { parts: Part[]; wires: Wire[] }
+type Drag =
+  | { kind: 'parts'; ids: string[]; start: Map<string, { x: number; y: number }>; ox: number; oy: number; key: string }
+  | { kind: 'bend'; id: string; base: { x: number; y: number }; key: string }
+  | { kind: 'pan'; sx: number; sy: number; vx: number; vy: number }
+  | { kind: 'press'; id: string }
+  | { kind: 'marquee'; add: boolean; base: string[] }
+  | null;
 
 export default function Workbench(props: Props) {
-  const { project, update, running, seconds, live, flow, notes, voltageAt, onLearn, fitKey, canUndo, canRedo, onUndo, onRedo, onToast, onShortcuts, addRequest, guide, onOpenGuide } = props;
+  const { project, update, running, seconds, live, flow, notes, voltageAt, onLearn, fitKey, canUndo, canRedo, onUndo, onRedo, onToast, onShortcuts, addRequest, guide, onOpenGuide, dark } = props;
   const { parts, wires } = project;
   const wrap = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const coordRef = useRef<HTMLSpanElement>(null);
   const [view, setView] = useState<View>({ x: 40, y: 40, k: 1 });
+  const [size, setSize] = useState({ w: 800, h: 600 });
   const [sel, setSel] = useState<Sel>(null);
   const [wiring, setWiring] = useState<string | null>(null);
   const [mouse, setMouse] = useState({ x: 0, y: 0 });
   const [hover, setHover] = useState<string | null>(null);
-  const [ghost, setGhost] = useState<{ type: PartType; x: number; y: number; over: boolean } | null>(null);
+  const [ghost, setGhost] = useState<{ type: PartType; x: number; y: number; over: boolean; wx: number; wy: number } | null>(null);
   const [query, setQuery] = useState('');
   const [closed, setClosed] = useState<string[]>([]);
   const [hoverWire, setHoverWire] = useState<{ id: string; x: number; y: number } | null>(null);
   const [issuesOpen, setIssuesOpen] = useState(true);
+  const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; on: 'part' | 'wire' | 'canvas' } | null>(null);
+  const [panel, setPanel] = useState<'check' | 'export' | null>(null);
+  const [tool, setTool] = useState<'select' | 'pan'>('select');
+  const [space, setSpace] = useState(false);
+  const [mode, setMode] = useState<'2d' | '3d'>(() => { try { return localStorage.getItem(MODE_PREF) === '3d' ? '3d' : '2d'; } catch { return '2d'; } });
+  const [preset, setPreset] = useState<{ name: ViewPreset; n: number }>({ name: 'iso', n: 0 });
   const [showFlow, setShowFlow] = useState(() => { try { return localStorage.getItem(FLOW_PREF) !== '0'; } catch { return true; } });
   const [showMat, setShowMat] = useState(() => { try { return localStorage.getItem(MAT_PREF) !== '0'; } catch { return true; } });
   const [showLabels, setShowLabels] = useState(() => { try { return localStorage.getItem(LABEL_PREF) !== '0'; } catch { return true; } });
+  const [showMap, setShowMap] = useState(true);
   useEffect(() => { try { localStorage.setItem(FLOW_PREF, showFlow ? '1' : '0'); } catch { /* ignore */ } }, [showFlow]);
   useEffect(() => { try { localStorage.setItem(MAT_PREF, showMat ? '1' : '0'); } catch { /* ignore */ } }, [showMat]);
   useEffect(() => { try { localStorage.setItem(LABEL_PREF, showLabels ? '1' : '0'); } catch { /* ignore */ } }, [showLabels]);
+  useEffect(() => { try { localStorage.setItem(MODE_PREF, mode); } catch { /* ignore */ } }, [mode]);
   const dragSeq = useRef(0);
-  const drag = useRef<
-    | { kind: 'part'; id: string; dx: number; dy: number; key: string }
-    | { kind: 'bend'; id: string; base: { x: number; y: number }; key: string }
-    | { kind: 'pan'; sx: number; sy: number; vx: number; vy: number }
-    | { kind: 'press'; id: string }
-    | null
-  >(null);
+  const pasteN = useRef(0);
+  const clip = useRef<Clip | null>(null);
+  const drag = useRef<Drag>(null);
+
+  const selIds = useMemo(() => (sel?.kind === 'parts' ? sel.ids : []), [sel]);
+  const selSet = useMemo(() => new Set(selIds), [selIds]);
+  const selectParts = useCallback((ids: string[]) => setSel(ids.length ? { kind: 'parts', ids } : null), []);
 
   const pinMap = useMemo(() => {
     const m = new Map<string, { x: number; y: number; name: string; kind: string; part: Part }>();
@@ -139,66 +146,165 @@ export default function Workbench(props: Props) {
     return m;
   }, [parts]);
 
-  const nets = useMemo(() => connections(parts, wires), [parts, wires]);
+  const nets = useMemo(() => buildNets(parts, wires), [parts, wires]);
+  const issues = useMemo(() => checkCircuit(project), [project]);
+  const issueParts = useMemo(() => {
+    const m = new Map<string, Issue['level']>();
+    for (const i of issues) for (const id of i.parts) if (!m.has(id) || i.level === 'error') m.set(id, i.level);
+    return m;
+  }, [issues]);
+  const issueCount = issues.filter(i => i.level !== 'info').length;
 
   const toWorldPt = useCallback((cx: number, cy: number) => {
     const r = wrap.current!.getBoundingClientRect();
     return { x: (cx - r.left - view.x) / view.k, y: (cy - r.top - view.y) / view.k };
   }, [view]);
 
+  useEffect(() => {
+    const el = wrap.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => { const r = el.getBoundingClientRect(); setSize({ w: r.width, h: r.height }); });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const fit = useCallback(() => {
+    if (mode === '3d') { setPreset(p => ({ name: 'iso', n: p.n + 1 })); return; }
     const el = wrap.current;
     if (!el) return;
     const { width, height } = el.getBoundingClientRect();
     if (!parts.length) { setView({ x: width / 2 - 200, y: height / 2 - 100, k: 1 }); return; }
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const part of parts) {
-      const [bx0, by0, bx1, by1] = PARTS[part.type].box;
-      for (const [lx, ly] of [[bx0, by0], [bx1, by0], [bx0, by1], [bx1, by1]]) {
-        const w = toWorld(part, lx, ly);
-        x0 = Math.min(x0, w.x); y0 = Math.min(y0, w.y); x1 = Math.max(x1, w.x); y1 = Math.max(y1, w.y);
-      }
+      const b = partBounds(part);
+      x0 = Math.min(x0, b.x0); y0 = Math.min(y0, b.y0); x1 = Math.max(x1, b.x1); y1 = Math.max(y1, b.y1);
     }
     const pad = 72;
     const k = Math.min(1.8, Math.max(0.3, Math.min((width - pad * 2) / (x1 - x0), (height - pad * 2) / (y1 - y0))));
     setView({ k, x: (width - (x1 + x0) * k) / 2, y: (height - (y1 + y0) * k) / 2 });
-  }, [parts]);
+  }, [parts, mode]);
 
   // Re-centre when another project is opened.
   const fitRef = useRef(fit);
   fitRef.current = fit;
   useLayoutEffect(() => { fitRef.current(); setSel(null); setWiring(null); setHoverWire(null); }, [fitKey]);
-  useEffect(() => { if (running) { setWiring(null); setIssuesOpen(true); } }, [running]);
-  // Forget a selection whose part or wire was removed (for example by undo).
+  useEffect(() => { if (running) { setWiring(null); setIssuesOpen(true); setMenu(null); } }, [running]);
+  // Forget selected things that were removed (for example by undo).
   useEffect(() => {
-    if (sel && !(sel.kind === 'part' ? parts.some(p => p.id === sel.id) : wires.some(w => w.id === sel.id))) setSel(null);
-  }, [sel, parts, wires]);
+    if (!sel) return;
+    if (sel.kind === 'wire') { if (!wires.some(w => w.id === sel.id)) setSel(null); return; }
+    const keep = sel.ids.filter(id => parts.some(p => p.id === id));
+    if (keep.length !== sel.ids.length) selectParts(keep);
+  }, [sel, parts, wires, selectParts]);
 
   // ---- editing ----
   const removeSel = useCallback(() => {
     if (!sel || running) return;
-    update(p => sel.kind === 'wire'
-      ? { ...p, wires: p.wires.filter(w => w.id !== sel.id) }
-      : { ...p, parts: p.parts.filter(x => x.id !== sel.id), wires: p.wires.filter(w => !w.from.startsWith(sel.id + ':') && !w.to.startsWith(sel.id + ':')) });
+    if (sel.kind === 'wire') update(p => ({ ...p, wires: p.wires.filter(w => w.id !== sel.id) }));
+    else {
+      const gone = new Set(sel.ids);
+      const owner = (r: string) => gone.has(r.slice(0, r.indexOf(':')));
+      update(p => ({ ...p, parts: p.parts.filter(x => !gone.has(x.id)), wires: p.wires.filter(w => !owner(w.from) && !owner(w.to)) }));
+    }
     setSel(null);
   }, [sel, running, update]);
 
+  /** Rotate one part in place, or a group of parts together around their middle. */
   const rotateSel = useCallback(() => {
-    if (!sel || sel.kind !== 'part' || running) return;
-    update(p => ({ ...p, parts: p.parts.map(x => (x.id === sel.id ? { ...x, rot: ((x.rot + 90) % 360) as Rot } : x)) }));
-  }, [sel, running, update]);
+    if (!selIds.length || running) return;
+    const chosen = parts.filter(p => selSet.has(p.id));
+    if (chosen.length === 1) {
+      update(p => ({ ...p, parts: p.parts.map(x => (x.id === chosen[0].id ? { ...x, rot: ((x.rot + 90) % 360) as Rot } : x)) }));
+      return;
+    }
+    const piv = chosen.map(p => { const [px, py] = pivot(p.type); return { id: p.id, px, py, x: p.x + px, y: p.y + py }; });
+    const cx = snap(piv.reduce((s, q) => s + q.x, 0) / piv.length), cy = snap(piv.reduce((s, q) => s + q.y, 0) / piv.length);
+    const next = new Map(piv.map(q => [q.id, { x: snap(cx - (q.y - cy) - q.px), y: snap(cy + (q.x - cx) - q.py) }]));
+    update(p => ({ ...p, parts: p.parts.map(x => { const n = next.get(x.id); return n ? { ...x, ...n, rot: ((x.rot + 90) % 360) as Rot } : x; }) }));
+  }, [selIds, selSet, parts, running, update]);
 
+  /** The selected parts and the wires that run between them. Boards stay put: a project has one. */
+  const gather = useCallback((): Clip | null => {
+    const chosen = parts.filter(p => selSet.has(p.id) && !isBoard(p.type));
+    if (!chosen.length) return null;
+    const ids = new Set(chosen.map(p => p.id));
+    const inside = (r: string) => ids.has(r.slice(0, r.indexOf(':')));
+    return { parts: chosen, wires: wires.filter(w => inside(w.from) && inside(w.to)) };
+  }, [parts, wires, selSet]);
+
+  const place = useCallback((c: Clip, at?: { x: number; y: number }) => {
+    if (running) return;
+    const b = c.parts.map(partBounds).reduce((a, q) => ({ x0: Math.min(a.x0, q.x0), y0: Math.min(a.y0, q.y0), x1: Math.max(a.x1, q.x1), y1: Math.max(a.y1, q.y1) }));
+    let dx: number, dy: number;
+    if (at) { dx = snap(at.x - (b.x0 + b.x1) / 2); dy = snap(at.y - (b.y0 + b.y1) / 2); }
+    else { pasteN.current += 1; dx = dy = 24 * pasteN.current; }
+    const ids = new Map<string, string>();
+    const made = c.parts.map(p => { const id = newId(p.type[0]); ids.set(p.id, id); return { ...p, id, x: p.x + dx, y: p.y + dy, props: { ...p.props, label: '' } }; });
+    const re = (r: string) => { const i = r.indexOf(':'); return `${ids.get(r.slice(0, i))}${r.slice(i)}`; };
+    const madeWires = c.wires.map(w => ({ ...w, id: newId('w'), from: re(w.from), to: re(w.to) }));
+    update(p => ({ ...p, parts: [...p.parts, ...made], wires: [...p.wires, ...madeWires] }));
+    selectParts(made.map(p => p.id));
+  }, [running, update, selectParts]);
+
+  const copySel = useCallback((quiet = false) => {
+    const c = gather();
+    if (!c) return false;
+    clip.current = JSON.parse(JSON.stringify(c)) as Clip;
+    pasteN.current = 0;
+    if (!quiet) onToast(`Copied ${c.parts.length} part${c.parts.length === 1 ? '' : 's'}${c.wires.length ? ` and ${c.wires.length} wire${c.wires.length === 1 ? '' : 's'}` : ''}`);
+    return true;
+  }, [gather, onToast]);
+  const cutSel = useCallback(() => { if (!running && copySel(true)) removeSel(); }, [copySel, removeSel, running]);
+  const paste = useCallback((at?: { x: number; y: number }) => { if (clip.current) place(clip.current, at); }, [place]);
   const duplicateSel = useCallback(() => {
-    if (!sel || sel.kind !== 'part' || running) return;
-    const src = parts.find(p => p.id === sel.id);
-    if (!src || isBoard(src.type)) return;
-    const copy = { ...makePart(src.type, src.x + 24, src.y + 24, src.props), rot: src.rot };
-    update(p => ({ ...p, parts: [...p.parts, copy] }));
-    setSel({ kind: 'part', id: copy.id });
-  }, [sel, running, parts, update]);
+    const c = gather();
+    if (!c) return;
+    const b = c.parts.map(partBounds).reduce((a, q) => ({ x0: Math.min(a.x0, q.x0), y0: Math.min(a.y0, q.y0), x1: Math.max(a.x1, q.x1), y1: Math.max(a.y1, q.y1) }));
+    place(c, { x: (b.x0 + b.x1) / 2 + 24, y: (b.y0 + b.y1) / 2 + 24 });
+  }, [gather, place]);
+  const selectAll = useCallback(() => selectParts(parts.map(p => p.id)), [parts, selectParts]);
+
+  const nudge = useCallback((dx: number, dy: number) => {
+    if (!selIds.length || running) return;
+    update(p => ({ ...p, parts: p.parts.map(x => (selSet.has(x.id) ? { ...x, x: x.x + dx, y: x.y + dy } : x)) }), { key: `nudge:${selIds.join(',')}` });
+  }, [selIds, selSet, running, update]);
+
+  /** Line up the selected parts by their outlines, or space them evenly, like a drawing program. */
+  const align = useCallback((how: 'left' | 'cx' | 'right' | 'top' | 'cy' | 'bottom' | 'dx' | 'dy') => {
+    const chosen = parts.filter(p => selSet.has(p.id));
+    if (chosen.length < 2 || running) return;
+    const b = new Map(chosen.map(p => [p.id, partBounds(p)]));
+    const all = [...b.values()];
+    const x0 = Math.min(...all.map(q => q.x0)), x1 = Math.max(...all.map(q => q.x1));
+    const y0 = Math.min(...all.map(q => q.y0)), y1 = Math.max(...all.map(q => q.y1));
+    const move = new Map<string, { dx: number; dy: number }>();
+    if (how === 'dx' || how === 'dy') {
+      const h = how === 'dx';
+      const order = [...chosen].sort((p, q) => (h ? b.get(p.id)!.x0 - b.get(q.id)!.x0 : b.get(p.id)!.y0 - b.get(q.id)!.y0));
+      const span = order.reduce((s, p) => s + (h ? b.get(p.id)!.x1 - b.get(p.id)!.x0 : b.get(p.id)!.y1 - b.get(p.id)!.y0), 0);
+      const gap = ((h ? x1 - x0 : y1 - y0) - span) / (order.length - 1);
+      let at = h ? x0 : y0;
+      for (const p of order) {
+        const q = b.get(p.id)!;
+        move.set(p.id, h ? { dx: snap(at - q.x0), dy: 0 } : { dx: 0, dy: snap(at - q.y0) });
+        at += (h ? q.x1 - q.x0 : q.y1 - q.y0) + gap;
+      }
+    } else {
+      for (const p of chosen) {
+        const q = b.get(p.id)!;
+        const dx = how === 'left' ? x0 - q.x0 : how === 'right' ? x1 - q.x1 : how === 'cx' ? (x0 + x1) / 2 - (q.x0 + q.x1) / 2 : 0;
+        const dy = how === 'top' ? y0 - q.y0 : how === 'bottom' ? y1 - q.y1 : how === 'cy' ? (y0 + y1) / 2 - (q.y0 + q.y1) / 2 : 0;
+        move.set(p.id, { dx: snap(dx), dy: snap(dy) });
+      }
+    }
+    update(p => ({ ...p, parts: p.parts.map(x => { const m = move.get(x.id); return m ? { ...x, x: x.x + m.dx, y: x.y + m.dy } : x; }) }));
+  }, [parts, selSet, running, update]);
 
   const setProp = (id: string, key: string, value: number | string, opt?: { key?: string; skip?: boolean }) =>
     update(p => ({ ...p, parts: p.parts.map(x => (x.id === id ? { ...x, props: { ...x.props, [key]: value } } : x)) }), opt);
+
+  /** Where a new part lands if dropped with its centre at `c`. */
+  const dropAt = (type: PartType, c: { x: number; y: number }) => { const [px, py] = pivot(type); return { x: snap(c.x - px), y: snap(c.y - py) }; };
 
   /** Add a part with its centre at `at` (world coordinates), or in the middle of the view. */
   const addPart = (type: PartType, at?: { x: number; y: number }) => {
@@ -215,16 +321,15 @@ export default function Workbench(props: Props) {
         parts: p.parts.map(x => (x.id === existing.id ? { ...x, type } : x)),
         wires: p.wires.filter(w => (!mine(w.from) || ok.has(w.from)) && (!mine(w.to) || ok.has(w.to))),
       }));
-      setSel({ kind: 'part', id: existing.id });
+      selectParts([existing.id]);
       return;
     }
-    const el = wrap.current!.getBoundingClientRect();
     const n = at ? 0 : parts.length % 5;
-    const c = at ?? { x: (el.width / 2 - view.x) / view.k, y: (el.height / 2 - view.y) / view.k };
-    const [px, py] = pivot(type);
-    const part = makePart(type, snap(c.x - px + n * 24), snap(c.y - py + n * 24));
+    const c = at ?? { x: (size.w / 2 - view.x) / view.k + n * 24, y: (size.h / 2 - view.y) / view.k + n * 24 };
+    const pos = dropAt(type, c);
+    const part = makePart(type, pos.x, pos.y);
     update(p => ({ ...p, parts: [...p.parts, part] }));
-    setSel({ kind: 'part', id: part.id });
+    selectParts([part.id]);
   };
 
   // Parts picked in the command palette arrive here.
@@ -237,7 +342,7 @@ export default function Workbench(props: Props) {
     addRef.current(addRequest.type);
   }, [addRequest]);
 
-  /** Drag a part out of the library onto the workplane. A plain click adds it in the middle. */
+  /** Drag a part out of the library onto the workplane, with a live preview of where it lands. A plain click adds it in the middle. */
   const startNew = (e: React.PointerEvent, type: PartType) => {
     if (running || e.button !== 0) return;
     const sx = e.clientX, sy = e.clientY;
@@ -252,12 +357,13 @@ export default function Workbench(props: Props) {
     const move = (ev: PointerEvent) => {
       if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 6) return;
       moved = true;
-      setGhost({ type, x: ev.clientX, y: ev.clientY, over: inside(ev.clientX, ev.clientY) });
+      const w = dropAt(type, toWorldPt(ev.clientX, ev.clientY));
+      setGhost({ type, x: ev.clientX, y: ev.clientY, over: inside(ev.clientX, ev.clientY), wx: w.x, wy: w.y });
     };
     const up = (ev: PointerEvent) => {
       done();
       if (!moved) addPart(type);
-      else if (inside(ev.clientX, ev.clientY)) addPart(type, toWorldPt(ev.clientX, ev.clientY));
+      else if (inside(ev.clientX, ev.clientY)) addPart(type, mode === '3d' ? undefined : toWorldPt(ev.clientX, ev.clientY));
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -280,57 +386,92 @@ export default function Workbench(props: Props) {
     });
   };
 
+  /** While wiring, the pin nearest the cursor (within reach) is where the wire will land. */
+  const magnet = useMemo(() => {
+    if (!wiring) return null;
+    let best: string | null = null, bd = 14 / Math.min(1.5, view.k);
+    for (const [r, p] of pinMap) {
+      if (r === wiring) continue;
+      const d = Math.hypot(p.x - mouse.x, p.y - mouse.y);
+      if (d < bd) { bd = d; best = r; }
+    }
+    return best;
+  }, [wiring, mouse, pinMap, view.k]);
+
   // ---- pointer handling ----
   const onDown = (e: React.PointerEvent) => {
+    setMenu(null);
+    setPanel(null);
     if (e.button !== 0 && e.button !== 1) return;
     const t = (e.target as Element).closest<SVGElement>('[data-bend],[data-pin],[data-wire],[data-part]');
     const w = toWorldPt(e.clientX, e.clientY);
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
-    if (e.button === 1 || !t) {
-      if (e.button === 0) { setSel(null); setWiring(null); }
+    if (e.button === 1 || tool === 'pan' || space) {
       drag.current = { kind: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y };
+      return;
+    }
+    if (wiring && magnet && (!t || !t.dataset.pin)) { finishWire(magnet); return; }
+    if (!t) {
+      setWiring(null);
+      const add = e.shiftKey || e.ctrlKey || e.metaKey;
+      if (!add) setSel(null);
+      drag.current = { kind: 'marquee', add, base: add ? selIds : [] };
+      setMarquee({ x0: w.x, y0: w.y, x1: w.x, y1: w.y });
       return;
     }
     if (t.dataset.bend && !running) {
       const wire = wires.find(x => x.id === t.dataset.bend);
-      if (wire) {
-        const a = pinMap.get(wire.from), b = pinMap.get(wire.to);
-        if (a && b) {
-          setSel({ kind: 'wire', id: wire.id });
-          drag.current = { kind: 'bend', id: wire.id, base: wireGeom(a, b).mid, key: `bend:${++dragSeq.current}` };
-        }
+      const a = wire && pinMap.get(wire.from), b = wire && pinMap.get(wire.to);
+      if (wire && a && b) {
+        setSel({ kind: 'wire', id: wire.id });
+        drag.current = { kind: 'bend', id: wire.id, base: wireGeom(a, b).mid, key: `bend:${++dragSeq.current}` };
       }
       return;
     }
-    if (t.dataset.pin && !running) {
+    if (t.dataset.pin && !running && !e.shiftKey) {
       if (wiring) finishWire(t.dataset.pin); else { setWiring(t.dataset.pin); setMouse(w); setSel(null); }
       return;
     }
     if (t.dataset.wire) { setSel({ kind: 'wire', id: t.dataset.wire }); setWiring(null); return; }
-    const part = t.dataset.pin ? pinMap.get(t.dataset.pin)!.part : parts.find(p => p.id === t.dataset.part)!;
-    setSel({ kind: 'part', id: part.id });
+    const part = t.dataset.pin ? pinMap.get(t.dataset.pin)!.part : parts.find(p => p.id === t.dataset.part);
+    if (!part) return;
     setWiring(null);
     if (running) {
+      selectParts([part.id]);
       if (part.type === 'button') { setProp(part.id, 'pressed', 1, { skip: true }); drag.current = { kind: 'press', id: part.id }; }
       if (part.type === 'switch') setProp(part.id, 'pos', part.props.pos ? 0 : 1);
       return;
     }
-    drag.current = { kind: 'part', id: part.id, dx: w.x - part.x, dy: w.y - part.y, key: `move:${++dragSeq.current}` };
+    if (e.shiftKey || e.ctrlKey || e.metaKey) {
+      selectParts(selSet.has(part.id) ? selIds.filter(id => id !== part.id) : [...selIds, part.id]);
+      return;
+    }
+    // Dragging a part that is already selected moves the whole selection.
+    const ids = selSet.has(part.id) ? selIds : [part.id];
+    if (!selSet.has(part.id)) selectParts(ids);
+    const start = new Map(parts.filter(p => ids.includes(p.id)).map(p => [p.id, { x: p.x, y: p.y }]));
+    drag.current = { kind: 'parts', ids, start, ox: w.x, oy: w.y, key: `move:${++dragSeq.current}` };
   };
 
   const onMove = (e: React.PointerEvent) => {
     const d = drag.current;
+    const w = toWorldPt(e.clientX, e.clientY);
+    if (coordRef.current) coordRef.current.textContent = `X ${(w.x * MM_PER_UNIT).toFixed(1)}  Y ${(w.y * MM_PER_UNIT).toFixed(1)} mm`;
     if (hoverWire && running) { const r = wrap.current!.getBoundingClientRect(); setHoverWire({ ...hoverWire, x: e.clientX - r.left, y: e.clientY - r.top }); }
-    if (wiring) setMouse(toWorldPt(e.clientX, e.clientY));
+    if (wiring) setMouse(w);
     if (!d) return;
     if (d.kind === 'pan') setView(v => ({ ...v, x: d.vx + e.clientX - d.sx, y: d.vy + e.clientY - d.sy }));
-    if (d.kind === 'part') {
-      const w = toWorldPt(e.clientX, e.clientY);
-      const x = snap(w.x - d.dx), y = snap(w.y - d.dy);
-      update(p => (p.parts.some(q => q.id === d.id && (q.x !== x || q.y !== y)) ? { ...p, parts: p.parts.map(q => (q.id === d.id ? { ...q, x, y } : q)) } : p), { key: d.key });
+    if (d.kind === 'marquee') setMarquee(m => (m ? { ...m, x1: w.x, y1: w.y } : m));
+    if (d.kind === 'parts') {
+      const dx = snap(w.x - d.ox), dy = snap(w.y - d.oy);
+      update(p => {
+        const first = p.parts.find(q => q.id === d.ids[0]);
+        const s0 = d.start.get(d.ids[0]);
+        if (!first || !s0 || (first.x === s0.x + dx && first.y === s0.y + dy)) return p;
+        return { ...p, parts: p.parts.map(q => { const s = d.start.get(q.id); return s ? { ...q, x: s.x + dx, y: s.y + dy } : q; }) };
+      }, { key: d.key });
     }
     if (d.kind === 'bend') {
-      const w = toWorldPt(e.clientX, e.clientY);
       const bx = Math.round(w.x - d.base.x), by = Math.round(w.y - d.base.y);
       const bend: [number, number] | undefined = Math.hypot(bx, by) < 4 ? undefined : [bx, by];
       update(p => ({ ...p, wires: p.wires.map(q => (q.id === d.id ? { ...q, bend } : q)) }), { key: d.key });
@@ -340,8 +481,40 @@ export default function Workbench(props: Props) {
   const onUp = () => {
     const d = drag.current;
     if (d?.kind === 'press') setProp(d.id, 'pressed', 0, { skip: true });
+    if (d?.kind === 'marquee' && marquee) {
+      const { x0, y0, x1, y1 } = marquee;
+      if (Math.abs(x1 - x0) * view.k > 3 || Math.abs(y1 - y0) * view.k > 3) {
+        // Drag right: parts fully inside. Drag left: anything the box touches (except the boards under everything).
+        const window_ = x1 >= x0;
+        const r = { x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1) };
+        const hit = parts.filter(p => {
+          const b = partBounds(p);
+          const inside = b.x0 >= r.x0 && b.x1 <= r.x1 && b.y0 >= r.y0 && b.y1 <= r.y1;
+          if (window_ || inside) return inside;
+          if (p.type === 'breadboard' || isBoard(p.type)) return false;
+          return b.x1 >= r.x0 && b.x0 <= r.x1 && b.y1 >= r.y0 && b.y0 <= r.y1;
+        }).map(p => p.id);
+        selectParts([...new Set([...d.base, ...hit])]);
+      }
+      setMarquee(null);
+    }
     drag.current = null;
   };
+
+  const onContext = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (running) return;
+    setWiring(null);
+    const r = wrap.current!.getBoundingClientRect();
+    const t = (e.target as Element).closest<SVGElement>('[data-wire],[data-part],[data-pin]');
+    const partId = t?.dataset.part ?? (t?.dataset.pin ? pinMap.get(t.dataset.pin)?.part.id : undefined);
+    let on: 'part' | 'wire' | 'canvas' = 'canvas';
+    if (t?.dataset.wire) { setSel({ kind: 'wire', id: t.dataset.wire }); on = 'wire'; }
+    else if (partId) { if (!selSet.has(partId)) selectParts([partId]); on = 'part'; }
+    mouseAtMenu.current = toWorldPt(e.clientX, e.clientY);
+    setMenu({ x: Math.min(e.clientX - r.left, r.width - 230), y: Math.min(e.clientY - r.top, r.height - 330), on });
+  };
+  const mouseAtMenu = useRef({ x: 0, y: 0 });
 
   const onOver = (e: React.PointerEvent) => {
     const el = e.target as SVGElement;
@@ -354,7 +527,7 @@ export default function Workbench(props: Props) {
 
   const zoomAt = useCallback((cx: number, cy: number, factor: number) => {
     setView(v => {
-      const k = Math.min(4, Math.max(0.25, v.k * factor));
+      const k = Math.min(4, Math.max(0.2, v.k * factor));
       return { k, x: cx - (cx - v.x) * (k / v.k), y: cy - (cy - v.y) * (k / v.k) };
     });
   }, []);
@@ -362,33 +535,59 @@ export default function Workbench(props: Props) {
   useEffect(() => {
     const el = wrap.current!;
     const onWheel = (e: WheelEvent) => {
+      if (mode === '3d') return;
       e.preventDefault();
       setHoverWire(null);
       const r = el.getBoundingClientRect();
-      zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0015));
+      // Pinch and Ctrl+wheel zoom; a plain two-finger trackpad scroll pans.
+      if (!e.ctrlKey && Math.abs(e.deltaX) > 0 && Math.abs(e.deltaY) < 40 && e.deltaMode === 0 && !Number.isInteger(e.deltaY)) {
+        setView(v => ({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY }));
+        return;
+      }
+      zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)));
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [zoomAt]);
+  }, [zoomAt, mode]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).closest('input,textarea,select,[contenteditable]')) return;
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSel(); return; }
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.key === 'Escape') { setWiring(null); setSel(null); }
+      const k = e.key.toLowerCase();
+      if (e.ctrlKey || e.metaKey) {
+        if (k === 'd') { e.preventDefault(); duplicateSel(); }
+        else if (k === 'c' && selIds.length) { e.preventDefault(); copySel(); }
+        else if (k === 'x' && selIds.length) { e.preventDefault(); cutSel(); }
+        else if (k === 'v' && clip.current) { e.preventDefault(); paste(); }
+        else if (k === 'a') { e.preventDefault(); selectAll(); }
+        return;
+      }
+      if (e.altKey) return;
+      if (e.key === ' ' && mode === '2d') { e.preventDefault(); setSpace(true); return; }
+      if (e.key === 'Escape') { setWiring(null); setSel(null); setMenu(null); setPanel(null); }
       if (e.key === 'Delete' || e.key === 'Backspace') removeSel();
-      if (e.key === 'r' || e.key === 'R') rotateSel();
+      if (k === 'r') rotateSel();
+      if (k === 'v') setTool('select');
+      if (k === 'h') setTool('pan');
+      if (k === 'f') fit();
+      if (e.key.startsWith('Arrow') && selIds.length) {
+        e.preventDefault();
+        const s = e.shiftKey ? P * 5 : P;
+        nudge(e.key === 'ArrowLeft' ? -s : e.key === 'ArrowRight' ? s : 0, e.key === 'ArrowUp' ? -s : e.key === 'ArrowDown' ? s : 0);
+      }
     };
+    const onKeyUp = (e: KeyboardEvent) => { if (e.key === ' ') setSpace(false); };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [removeSel, rotateSel, duplicateSel]);
+    window.addEventListener('keyup', onKeyUp);
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('keyup', onKeyUp); };
+  }, [removeSel, rotateSel, duplicateSel, copySel, cutSel, paste, selectAll, nudge, fit, selIds, mode]);
 
-  const zoomButton = (f: number) => { const r = wrap.current!.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, f); };
-  const zoomReset = () => { const r = wrap.current!.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1 / view.k); };
+  const zoomButton = (f: number) => zoomAt(size.w / 2, size.h / 2, f);
+  const zoomReset = () => zoomAt(size.w / 2, size.h / 2, 1 / view.k);
 
-  const selPart = sel?.kind === 'part' ? parts.find(p => p.id === sel.id) : undefined;
+  const selPart = selIds.length === 1 ? parts.find(p => p.id === selIds[0]) : undefined;
   const selWire = sel?.kind === 'wire' ? wires.find(w => w.id === sel.id) : undefined;
+  const multi = selIds.length > 1;
   const refs = useMemo(() => designators(parts), [parts]);
   const mat = useMemo(() => {
     let x0 = -180, y0 = -140, x1 = 1720, y1 = 860;
@@ -401,12 +600,18 @@ export default function Workbench(props: Props) {
     }
     return { x0, y0, x1: Math.max(x1, x0 + 1900), y1: Math.max(y1, y0 + 960) };
   }, [parts]);
+  const selBox = useMemo(() => {
+    if (!multi) return null;
+    const bs = parts.filter(p => selSet.has(p.id)).map(partBounds);
+    if (!bs.length) return null;
+    return { x0: Math.min(...bs.map(b => b.x0)), y0: Math.min(...bs.map(b => b.y0)), x1: Math.max(...bs.map(b => b.x1)), y1: Math.max(...bs.map(b => b.y1)) };
+  }, [multi, parts, selSet]);
   const noted = new Set(notes.map(n => n.partId));
   const hoverPin = hover ? pinMap.get(hover) : undefined;
   const joined = hover ? nets.group(hover).filter(r => r !== hover) : [];
   const joinedParts = joined.filter(r => pinMap.get(r)?.part.type !== 'breadboard');
   const joinedText = !hoverPin ? '' : joinedParts.length
-    ? `Joined to ${joinedParts.slice(0, 3).map(r => { const q = pinMap.get(r)!; return `${PARTS[q.part.type].name} ${q.name}`; }).join(', ')}${joinedParts.length > 3 ? ` and ${joinedParts.length - 3} more` : ''}`
+    ? `Joined to ${joinedParts.slice(0, 3).map(r => { const q = pinMap.get(r)!; return `${refs.get(q.part.id) ?? PARTS[q.part.type].name} ${q.name}`; }).join(', ')}${joinedParts.length > 3 ? ` and ${joinedParts.length - 3} more` : ''}`
     : joined.length ? `Joined to ${joined.length} other hole${joined.length === 1 ? '' : 's'}` : 'Not connected to anything';
   const board = parts.find(p => isBoard(p.type));
   let dot = 24 * view.k;
@@ -416,11 +621,102 @@ export default function Workbench(props: Props) {
   const matches = PART_ORDER.filter(t => !q || PARTS[t].name.toLowerCase().includes(q) || PARTS[t].blurb.toLowerCase().includes(q));
 
   const hint = running
-    ? 'Click buttons and switches. Hover a pin for its voltage, a wire for its current.'
-    : wiring ? 'Click another pin to finish the wire. Esc cancels.'
-    : selPart ? 'Drag to move. R rotates, Delete removes.'
-    : selWire ? 'Pick a color, or press Delete to remove the wire.'
-    : 'Drag parts in from the library. Click any pin to start a wire.';
+    ? (mode === '3d' ? 'Drag to orbit, right-drag to pan. Click buttons and switches to use them.' : 'Click buttons and switches. Hover a pin for its voltage, a wire for its current.')
+    : mode === '3d' ? 'Drag to orbit, right-drag to pan, scroll to zoom. Click a part to inspect it.'
+    : wiring ? 'Click a pin to finish the wire. It snaps to the nearest pin. Esc cancels.'
+    : multi ? `${selIds.length} selected. Drag to move together, R rotates, arrows nudge, Ctrl C copies.`
+    : selPart ? 'Drag to move. R rotates, arrows nudge, Delete removes. Shift-click adds to the selection.'
+    : selWire ? 'Drag the handle to bend it. Pick a color, or press Delete.'
+    : 'Drag right to select parts inside a box, left to select anything it touches. Space-drag pans.';
+
+  // ---- export ----
+  const exportImage = async (kind: 'svg' | 'png') => {
+    setPanel(null);
+    const name = fileName(project.name);
+    if (mode === '3d') {
+      const canvas = wrap.current?.querySelector<HTMLCanvasElement>('[data-bench3d] canvas');
+      if (!canvas) return;
+      canvas.toBlob(b => { if (b) download(`${name}-3d.png`, b); });
+      onToast('Saved a 3D snapshot');
+      return;
+    }
+    const svg = svgRef.current;
+    if (!svg || !parts.length) return;
+    const b = showMat ? mat : parts.map(partBounds).reduce((a, x) => ({ x0: Math.min(a.x0, x.x0 - 40), y0: Math.min(a.y0, x.y0 - 40), x1: Math.max(a.x1, x.x1 + 40), y1: Math.max(a.y1, x.y1 + 40) }), { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity });
+    const w = Math.ceil(b.x1 - b.x0 + 24), h = Math.ceil(b.y1 - b.y0 + 24);
+    const clone = svg.cloneNode(true) as SVGSVGElement;
+    clone.querySelectorAll('[data-noexport]').forEach(n => n.remove());
+    clone.querySelector('[data-world]')?.setAttribute('transform', `translate(${12 - b.x0} ${12 - b.y0})`);
+    clone.removeAttribute('class');
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    clone.setAttribute('width', String(w));
+    clone.setAttribute('height', String(h));
+    clone.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    const css = getComputedStyle(document.documentElement);
+    const vars = EXPORT_VARS.map(v => `${v}:${css.getPropertyValue(v).trim()}`).join(';');
+    const defs = document.getElementById('xl-defs')?.innerHTML ?? '';
+    clone.insertAdjacentHTML('afterbegin', `<style>svg{${vars}}</style>${defs}<rect width="100%" height="100%" fill="${css.getPropertyValue('--canvas').trim()}"/>`);
+    const text = new XMLSerializer().serializeToString(clone);
+    const blob = new Blob([text], { type: 'image/svg+xml' });
+    if (kind === 'svg') { download(`${name}.svg`, blob); onToast('Exported the drawing as SVG'); return; }
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      const scale = Math.min(3, 6000 / Math.max(w, h));
+      const c = document.createElement('canvas');
+      c.width = Math.round(w * scale); c.height = Math.round(h * scale);
+      const ctx = c.getContext('2d')!;
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      c.toBlob(pb => { if (pb) download(`${name}.png`, pb); });
+      onToast('Exported the drawing as PNG');
+    };
+    img.src = url;
+  };
+  const exportNetlist = () => {
+    setPanel(null);
+    download(`${fileName(project.name)}.cir`, new Blob([netlist(project)], { type: 'text/plain' }));
+    onToast('Exported a SPICE netlist (.cir)');
+  };
+
+  const focusIssue = (i: Issue) => {
+    if (i.wire) setSel({ kind: 'wire', id: i.wire });
+    else if (i.parts.length) selectParts(i.parts);
+  };
+
+  // ---- minimap ----
+  const MAP_W = 176, MAP_H = 112;
+  const mapScale = Math.min(MAP_W / (mat.x1 - mat.x0), MAP_H / (mat.y1 - mat.y0));
+  const mapOx = (MAP_W - (mat.x1 - mat.x0) * mapScale) / 2, mapOy = (MAP_H - (mat.y1 - mat.y0) * mapScale) / 2;
+  const mapTo = (e: React.PointerEvent) => {
+    const r = (e.currentTarget as Element).getBoundingClientRect();
+    const wx = (e.clientX - r.left - mapOx) / mapScale + mat.x0, wy = (e.clientY - r.top - mapOy) / mapScale + mat.y0;
+    setView(v => ({ ...v, x: size.w / 2 - wx * v.k, y: size.h / 2 - wy * v.k }));
+  };
+
+  const can = { edit: !running, sel: selIds.length > 0 && !running };
+  const menuItem = (label: string, icon: React.ReactNode, run: () => void, keys?: string, disabled = false) => (
+    <button key={label} role="menuitem" disabled={disabled} className="flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left text-[12.5px] hover:bg-surface-2 disabled:opacity-40 disabled:hover:bg-transparent"
+      onClick={() => { setMenu(null); run(); }}>
+      <span className="grid w-4 place-items-center text-fg-2">{icon}</span>
+      <span className="flex-1">{label}</span>
+      {keys && <span className="font-mono text-[10.5px] text-fg-3">{keys}</span>}
+    </button>
+  );
+  const alignBar = (
+    <div className="flex flex-wrap items-center gap-0.5">
+      {([
+        ['left', AlignStartVertical, 'Align left'], ['cx', AlignCenterVertical, 'Align centres'], ['right', AlignEndVertical, 'Align right'],
+        ['top', AlignStartHorizontal, 'Align top'], ['cy', AlignCenterHorizontal, 'Align middles'], ['bottom', AlignEndHorizontal, 'Align bottom'],
+        ['dx', AlignHorizontalDistributeCenter, 'Space evenly across'], ['dy', AlignVerticalDistributeCenter, 'Space evenly down'],
+      ] as const).map(([how, Icon, label]) => (
+        <button key={how} className="btn btn-ghost btn-sm btn-icon" aria-label={label} data-tip={label} disabled={running || ((how === 'dx' || how === 'dy') && selIds.length < 3)} onClick={() => align(how)}>
+          <Icon size={15} />
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col md:flex-row">
@@ -475,58 +771,139 @@ export default function Workbench(props: Props) {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* Toolbar */}
         <div className="flex h-10 shrink-0 items-center gap-1 border-b border-line bg-surface px-2" role="toolbar" aria-label="Edit">
+          <div className="seg mr-1" role="radiogroup" aria-label="View">
+            <button role="radio" aria-checked={mode === '2d'} onClick={() => setMode('2d')} data-tip="Flat drawing, for building">2D</button>
+            <button role="radio" aria-checked={mode === '3d'} onClick={() => { setMode('3d'); setWiring(null); }} data-tip="See it built, in 3D">3D</button>
+          </div>
+          {mode === '2d' && (
+            <>
+              <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setTool('select')} aria-pressed={tool === 'select'} aria-label="Select tool" data-tip="Select  V"><MousePointer2 size={15} /></button>
+              <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setTool('pan')} aria-pressed={tool === 'pan'} aria-label="Pan tool" data-tip="Pan  H (or hold Space)"><Hand size={15} /></button>
+            </>
+          )}
+          <span className="divider-v mx-1" />
           <button className="btn btn-ghost btn-sm btn-icon" onClick={onUndo} disabled={!canUndo || running} aria-label="Undo" data-tip="Undo  Ctrl Z"><Undo2 size={15} /></button>
           <button className="btn btn-ghost btn-sm btn-icon" onClick={onRedo} disabled={!canRedo || running} aria-label="Redo" data-tip="Redo  Ctrl Shift Z"><Redo2 size={15} /></button>
           <span className="divider-v mx-1" />
-          <button className="btn btn-ghost btn-sm btn-icon" onClick={rotateSel} disabled={!selPart || running} aria-label="Rotate" data-tip="Rotate  R"><RotateCw size={15} /></button>
-          <button className="btn btn-ghost btn-sm btn-icon" onClick={duplicateSel} disabled={!selPart || isBoard(selPart.type) || running} aria-label="Duplicate" data-tip="Duplicate  Ctrl D"><Copy size={14} /></button>
+          <button className="btn btn-ghost btn-sm btn-icon" onClick={rotateSel} disabled={!can.sel} aria-label="Rotate" data-tip="Rotate  R"><RotateCw size={15} /></button>
+          <button className="btn btn-ghost btn-sm btn-icon" onClick={duplicateSel} disabled={!can.sel || !gather()} aria-label="Duplicate" data-tip="Duplicate  Ctrl D"><Copy size={14} /></button>
           <button className="btn btn-ghost btn-sm btn-icon" onClick={removeSel} disabled={!sel || running} aria-label="Delete" data-tip="Delete  Del"><Trash2 size={15} /></button>
-          {(selPart || selWire) && <span className="chip ml-1.5 hidden sm:inline-flex">{selPart ? PARTS[selPart.type].name : 'Wire'}</span>}
+          {(selPart || selWire || multi) && <span className="chip ml-1.5 hidden whitespace-nowrap sm:inline-flex">{multi ? `${selIds.length} parts` : selPart ? (refs.get(selPart.id) ?? PARTS[selPart.type].name) : 'Wire'}</span>}
           <span className="flex-1" />
-          <button className="btn btn-ghost btn-sm" onClick={() => setShowMat(m => !m)} aria-pressed={showMat} data-tip="Toggle anti-static reference mat">
-            <Grid2x2 size={14} aria-hidden="true" /> <span className="hidden lg:inline">Mat</span>
-          </button>
-          <button className="btn btn-ghost btn-sm" onClick={() => setShowLabels(l => !l)} aria-pressed={showLabels} data-tip="Show part designators and values">
-            <Tag size={14} aria-hidden="true" /> <span className="hidden lg:inline">Labels</span>
-          </button>
+          <div className="relative">
+            <button className="btn btn-ghost btn-sm" onClick={() => setPanel(p => (p === 'check' ? null : 'check'))} aria-expanded={panel === 'check'} data-tip="Check the circuit for mistakes">
+              {issueCount ? <TriangleAlert size={14} className={issues.some(i => i.level === 'error') ? 'text-bad' : 'text-warn'} aria-hidden="true" /> : <ShieldCheck size={14} className="text-ok" aria-hidden="true" />}
+              <span className="hidden lg:inline">Check</span>
+              {issueCount > 0 && <span className="font-mono text-[11px] tabular-nums">{issueCount}</span>}
+            </button>
+            {panel === 'check' && (
+              <div className="popover absolute top-9 right-0 z-30 w-[340px] overflow-hidden" role="dialog" aria-label="Circuit check">
+                <div className="flex h-10 items-center justify-between border-b border-line px-3">
+                  <h3 className="text-[13px] font-semibold">Circuit check</h3>
+                  <span className="text-[11.5px] text-fg-3">{issues.length ? `${issues.length} found` : 'All clear'}</span>
+                </div>
+                {issues.length ? (
+                  <ul className="scroll max-h-80 overflow-auto p-1">
+                    {issues.map((i, n) => (
+                      <li key={n}>
+                        <button className="flex w-full gap-2.5 rounded-md px-2 py-2 text-left hover:bg-surface-2" onClick={() => focusIssue(i)}>
+                          {i.level === 'error' ? <CircleAlert size={15} className="mt-0.5 shrink-0 text-bad" /> : i.level === 'warn' ? <TriangleAlert size={15} className="mt-0.5 shrink-0 text-warn" /> : <Info size={15} className="mt-0.5 shrink-0 text-fg-3" />}
+                          <span className="min-w-0">
+                            <span className="block text-[12.5px] font-semibold">{i.title}</span>
+                            <span className="block text-[12px] leading-relaxed text-fg-2">{i.text}</span>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="flex items-center gap-2 px-3 py-4 text-[12.5px] text-fg-2"><CircleCheck size={15} className="text-ok" />No shorts, loose legs or backwards parts found.</p>
+                )}
+              </div>
+            )}
+          </div>
+          {mode === '2d' ? (
+            <>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowMat(m => !m)} aria-pressed={showMat} data-tip="Anti-static reference mat">
+                <Grid2x2 size={14} aria-hidden="true" /> <span className="hidden xl:inline">Mat</span>
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowLabels(l => !l)} aria-pressed={showLabels} data-tip="Part designators and values">
+                <Tag size={14} aria-hidden="true" /> <span className="hidden xl:inline">Labels</span>
+              </button>
+            </>
+          ) : (
+            <div className="seg" role="group" aria-label="Camera">
+              {(['iso', 'top', 'front'] as const).map(n => (
+                <button key={n} aria-checked={preset.name === n} role="radio" onClick={() => setPreset(p => ({ name: n, n: p.n + 1 }))}>{n === 'iso' ? 'Iso' : n === 'top' ? 'Top' : 'Front'}</button>
+              ))}
+            </div>
+          )}
           <button className="btn btn-ghost btn-sm" onClick={() => setShowFlow(f => !f)} aria-pressed={showFlow} data-tip="Show current flowing while running">
-            <Zap size={14} aria-hidden="true" /> <span className="hidden lg:inline">Current</span>
+            <Zap size={14} aria-hidden="true" /> <span className="hidden xl:inline">Current</span>
           </button>
-          <span className="divider-v mx-1" />
-          <button className="btn btn-ghost btn-sm btn-icon" onClick={() => zoomButton(1 / 1.25)} aria-label="Zoom out" data-tip="Zoom out"><Minus size={15} /></button>
-          <button className="btn btn-ghost btn-sm w-14 font-mono text-[11.5px] tabular-nums" onClick={zoomReset} data-tip="Reset zoom">{Math.round(view.k * 100)}%</button>
-          <button className="btn btn-ghost btn-sm btn-icon" onClick={() => zoomButton(1.25)} aria-label="Zoom in" data-tip="Zoom in"><Plus size={15} /></button>
-          <button className="btn btn-ghost btn-sm btn-icon" onClick={fit} aria-label="Fit to screen" data-tip="Fit to screen" data-tip-pos="left"><Maximize2 size={14} /></button>
+          <div className="relative">
+            <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setPanel(p => (p === 'export' ? null : 'export'))} aria-expanded={panel === 'export'} aria-label="Export" data-tip="Export" data-tip-pos="left"><Download size={15} /></button>
+            {panel === 'export' && (
+              <div className="popover absolute top-9 right-0 z-30 w-[244px] p-1" role="menu">
+                {mode === '3d'
+                  ? menuItem('3D snapshot (PNG)', <Camera size={14} />, () => exportImage('png'))
+                  : <>{menuItem('Image (PNG)', <ImageIcon size={14} />, () => exportImage('png'), undefined, !parts.length)}{menuItem('Drawing (SVG)', <ImageIcon size={14} />, () => exportImage('svg'), undefined, !parts.length)}</>}
+                {menuItem('SPICE netlist (.cir)', <FileCode size={14} />, exportNetlist, undefined, !parts.length)}
+              </div>
+            )}
+          </div>
+          {mode === '2d' && (
+            <>
+              <span className="divider-v mx-1" />
+              <button className="btn btn-ghost btn-sm btn-icon" onClick={() => zoomButton(1 / 1.25)} aria-label="Zoom out" data-tip="Zoom out"><Minus size={15} /></button>
+              <button className="btn btn-ghost btn-sm w-14 font-mono text-[11.5px] tabular-nums" onClick={zoomReset} data-tip="Reset zoom">{Math.round(view.k * 100)}%</button>
+              <button className="btn btn-ghost btn-sm btn-icon" onClick={() => zoomButton(1.25)} aria-label="Zoom in" data-tip="Zoom in"><Plus size={15} /></button>
+            </>
+          )}
+          <button className="btn btn-ghost btn-sm btn-icon" onClick={fit} aria-label="Fit to screen" data-tip="Fit to screen  F" data-tip-pos="left"><Maximize2 size={14} /></button>
         </div>
 
         {/* Workplane */}
         <div ref={wrap} className="workplane relative min-h-0 flex-1 overflow-hidden"
-          style={{
+          style={mode === '3d' ? undefined : {
             backgroundImage: 'radial-gradient(circle, var(--grid) 1px, transparent 1.3px)',
             backgroundSize: `${dot}px ${dot}px`,
             backgroundPosition: `${view.x - dot / 2}px ${view.y - dot / 2}px`,
-            cursor: wiring ? 'crosshair' : 'default',
+            cursor: drag.current?.kind === 'pan' ? 'grabbing' : tool === 'pan' || space ? 'grab' : wiring ? 'crosshair' : 'default',
             boxShadow: ghost?.over ? 'inset 0 0 0 2px var(--fg-3)' : undefined,
           }}>
-          <svg className="absolute inset-0 h-full w-full" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onPointerOver={onOver}
-            onPointerLeave={() => { setHover(null); setHoverWire(null); }}
+          {mode === '3d' ? (
+            <Suspense fallback={<p className="absolute inset-0 grid place-items-center text-fg-3">Building the 3D bench…</p>}>
+              <Bench3D parts={parts} wires={wires} live={live} running={running} flow={showFlow ? flow : {}} dark={dark} selected={selIds} preset={preset}
+                onSelect={id => (id ? selectParts([id]) : setSel(null))}
+                onPress={(id, down) => setProp(id, 'pressed', down ? 1 : 0, { skip: true })}
+                onToggle={id => { const p = parts.find(x => x.id === id); if (p) setProp(id, 'pos', p.props.pos ? 0 : 1); }} />
+            </Suspense>
+          ) : (
+          <svg ref={svgRef} className="absolute inset-0 h-full w-full" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onPointerOver={onOver}
+            onContextMenu={onContext}
+            onPointerLeave={() => { setHover(null); setHoverWire(null); if (coordRef.current) coordRef.current.textContent = ''; }}
             role="application" aria-label="Circuit workplane">
-            <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
+            <g data-world="" transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
               {showMat && <BenchMat x0={mat.x0} y0={mat.y0} x1={mat.x1} y1={mat.y1} />}
               {parts.map(part => {
                 const [cx, cy] = pivot(part.type);
                 const [x0, y0, x1, y1] = PARTS[part.type].box;
+                const lvl = panel === 'check' ? issueParts.get(part.id) : undefined;
                 return (
                   <g key={part.id} filter={part.type === 'breadboard' ? undefined : 'url(#xl-lift)'}>
                     <g data-part={part.id} transform={`translate(${part.x} ${part.y}) rotate(${part.rot} ${cx} ${cy})`}
-                      style={{ cursor: running ? (part.type === 'button' || part.type === 'switch' ? 'pointer' : 'default') : 'grab' }}>
+                      style={{ cursor: running ? (part.type === 'button' || part.type === 'switch' ? 'pointer' : 'default') : tool === 'pan' || space ? 'inherit' : 'grab' }}>
                       <rect x={x0} y={y0} width={x1 - x0} height={y1 - y0} fill="transparent" />
                       <PartArt part={part} live={running ? live[part.id] : undefined} running={running} />
-                      {sel?.id === part.id && (
-                        <rect x={x0 - 5} y={y0 - 5} width={x1 - x0 + 10} height={y1 - y0 + 10} rx={6} fill="none" style={FG} strokeWidth={1.5 / view.k} strokeDasharray={`${5 / view.k} ${4 / view.k}`} pointerEvents="none" />
+                      {selSet.has(part.id) && (
+                        <rect data-noexport="" x={x0 - 5} y={y0 - 5} width={x1 - x0 + 10} height={y1 - y0 + 10} rx={6} fill="none" style={FG} strokeWidth={1.5 / view.k} strokeDasharray={`${5 / view.k} ${4 / view.k}`} pointerEvents="none" />
+                      )}
+                      {lvl && (
+                        <rect data-noexport="" x={x0 - 8} y={y0 - 8} width={x1 - x0 + 16} height={y1 - y0 + 16} rx={8} fill="none" style={{ stroke: lvl === 'error' ? 'var(--bad)' : lvl === 'warn' ? 'var(--warn)' : 'var(--fg-3)' }} strokeWidth={2 / view.k} pointerEvents="none" />
                       )}
                       {noted.has(part.id) && (
-                        <g transform={`translate(${x1} ${y0})`} pointerEvents="none">
+                        <g data-noexport="" transform={`translate(${x1} ${y0})`} pointerEvents="none">
                           <circle r={8} style={{ fill: 'var(--warn)', stroke: 'var(--canvas)' }} strokeWidth={2} />
                           <text y={3.8} textAnchor="middle" style={{ fontSize: 11, fontWeight: 700, fill: '#0a0a0c', fontFamily: 'Geist, sans-serif' }}>!</text>
                         </g>
@@ -553,13 +930,15 @@ export default function Workbench(props: Props) {
                 const a = pinMap.get(w.from), b = pinMap.get(w.to);
                 if (!a || !b) return null;
                 const g = wireGeom(a, b, w.bend);
-                const on = sel?.id === w.id;
+                const on = sel?.kind === 'wire' && sel.id === w.id;
+                const flagged = panel === 'check' && issues.some(i => i.wire === w.id);
                 return (
                   <g key={w.id} data-wire={w.id} style={{ cursor: 'pointer' }}>
                     <path d={g.d} stroke="transparent" strokeWidth={12} fill="none" />
+                    {flagged && <path data-noexport="" d={g.d} style={{ stroke: 'var(--warn)' }} strokeWidth={9} strokeOpacity={0.45} fill="none" strokeLinecap="round" />}
                     <WireArt a={a} b={b} bend={w.bend} color={w.color} selected={on} />
                     {on && !running && (
-                      <circle data-bend={w.id} cx={g.mid.x} cy={g.mid.y} r={5.5 / view.k}
+                      <circle data-bend={w.id} data-noexport="" cx={g.mid.x} cy={g.mid.y} r={5.5 / view.k}
                         style={{ fill: 'var(--surface)', stroke: 'var(--fg)', cursor: 'move' }} strokeWidth={1.6 / view.k} />
                     )}
                   </g>
@@ -581,37 +960,65 @@ export default function Workbench(props: Props) {
                 );
               })}
 
-              {wiring && pinMap.get(wiring) && (
-                <path d={wireGeom(pinMap.get(wiring)!, mouse).d} style={FG} strokeWidth={2.5} strokeDasharray="6 5" fill="none" strokeLinecap="round" pointerEvents="none" />
+              {/* Insertion preview: exactly where the part will land */}
+              {ghost?.over && (
+                <g data-noexport="" opacity={0.6} pointerEvents="none" transform={`translate(${ghost.wx} ${ghost.wy})`}>
+                  <PartArt part={{ ...thumbPart(ghost.type), x: ghost.wx, y: ghost.wy }} />
+                </g>
               )}
 
+              {wiring && pinMap.get(wiring) && (() => {
+                const end = magnet ? pinMap.get(magnet)! : mouse;
+                return (
+                  <g data-noexport="" pointerEvents="none">
+                    <path d={wireGeom(pinMap.get(wiring)!, end).d} style={FG} strokeWidth={2.5} strokeDasharray="6 5" fill="none" strokeLinecap="round" />
+                    {magnet && <circle cx={end.x} cy={end.y} r={7} fill="none" style={FG} strokeWidth={2} />}
+                  </g>
+                );
+              })()}
+
               {/* Pin targets sit on top so a wire can start anywhere */}
-              <g style={{ cursor: running ? 'help' : 'crosshair' }}>
+              <g data-noexport="" style={{ cursor: running ? 'help' : 'crosshair' }}>
                 {[...pinMap].map(([r, p]) => <circle key={r} data-pin={r} cx={p.x} cy={p.y} r={5} fill="transparent" />)}
               </g>
-              {joined.map(r => { const pp = pinMap.get(r); return pp ? <circle key={r} cx={pp.x} cy={pp.y} r={4.6} style={{ fill: 'color-mix(in srgb, var(--canvas) 45%, transparent)', stroke: 'var(--fg)' }} strokeWidth={1.6} pointerEvents="none" /> : null; })}
-              {hoverPin && <circle cx={hoverPin.x} cy={hoverPin.y} r={5.5} style={{ fill: 'color-mix(in srgb, var(--fg) 18%, transparent)', stroke: 'var(--fg)' }} strokeWidth={1.4} pointerEvents="none" />}
+              <g data-noexport="">
+                {joined.map(r => { const pp = pinMap.get(r); return pp ? <circle key={r} cx={pp.x} cy={pp.y} r={4.6} style={{ fill: 'color-mix(in srgb, var(--canvas) 45%, transparent)', stroke: 'var(--fg)' }} strokeWidth={1.6} pointerEvents="none" /> : null; })}
+                {hoverPin && <circle cx={hoverPin.x} cy={hoverPin.y} r={5.5} style={{ fill: 'color-mix(in srgb, var(--fg) 18%, transparent)', stroke: 'var(--fg)' }} strokeWidth={1.4} pointerEvents="none" />}
+                {selBox && (
+                  <rect x={selBox.x0 - 10} y={selBox.y0 - 10} width={selBox.x1 - selBox.x0 + 20} height={selBox.y1 - selBox.y0 + 20} rx={4} fill="none"
+                    style={FG} strokeOpacity={0.5} strokeWidth={1 / view.k} pointerEvents="none" />
+                )}
+                {marquee && (() => {
+                  const right = marquee.x1 >= marquee.x0;
+                  return (
+                    <rect x={Math.min(marquee.x0, marquee.x1)} y={Math.min(marquee.y0, marquee.y1)} width={Math.abs(marquee.x1 - marquee.x0)} height={Math.abs(marquee.y1 - marquee.y0)}
+                      style={{ fill: right ? 'color-mix(in srgb, var(--fg) 8%, transparent)' : 'color-mix(in srgb, var(--ok) 10%, transparent)', stroke: right ? 'var(--fg)' : 'var(--ok)' }}
+                      strokeWidth={1 / view.k} strokeDasharray={right ? undefined : `${4 / view.k} ${3 / view.k}`} pointerEvents="none" />
+                  );
+                })()}
+              </g>
             </g>
           </svg>
+          )}
 
           {/* Pin tooltip, with a voltage reading while running */}
-          {hoverPin && (
+          {mode === '2d' && hoverPin && !marquee && (
             <div className="popover pointer-events-none absolute z-10 max-w-80 -translate-x-1/2 -translate-y-full px-2.5 py-1.5 text-[12px]"
               style={{ left: hoverPin.x * view.k + view.x, top: hoverPin.y * view.k + view.y - 12 }}>
               <span className="flex items-baseline gap-2 font-medium whitespace-nowrap">
-                {PARTS[hoverPin.part.type].name}: {hoverPin.name}
+                {refs.get(hoverPin.part.id) ?? PARTS[hoverPin.part.type].name} · {hoverPin.name}
                 {running && <span className="font-mono text-fg">{voltageAt(hover!).toFixed(2)} V</span>}
               </span>
               <span className="block text-fg-3">{joinedText}</span>
             </div>
           )}
 
-          {running && hoverWire && !hoverPin && !drag.current && (() => {
+          {mode === '2d' && running && hoverWire && !hoverPin && !drag.current && (() => {
             const w = wires.find(x => x.id === hoverWire.id);
             if (!w) return null;
             const amps = flow[w.id] ?? 0;
             const a = pinMap.get(w.from), b = pinMap.get(w.to);
-            const name = (pp?: { name: string; part: Part }) => (pp ? `${PARTS[pp.part.type].name} ${pp.name}` : '');
+            const name = (pp?: { name: string; part: Part }) => (pp ? `${refs.get(pp.part.id) ?? PARTS[pp.part.type].name} ${pp.name}` : '');
             const [src, dst] = amps >= 0 ? [a, b] : [b, a];
             return (
               <div className="popover pointer-events-none absolute z-10 max-w-72 -translate-x-1/2 -translate-y-full px-2.5 py-1.5 text-[12px]"
@@ -632,7 +1039,77 @@ export default function Workbench(props: Props) {
             </div>
           )}
 
-          {wiring && <div className="popover absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1.5 text-[12.5px] whitespace-nowrap">Click another pin to finish the wire <span className="kbd ml-2">Esc</span></div>}
+          {wiring && <div className="popover absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1.5 text-[12.5px] whitespace-nowrap">Click a pin to finish the wire <span className="kbd ml-2">Esc</span></div>}
+
+          {/* Right-click menu */}
+          {menu && (
+            <div className="popover absolute z-40 w-[224px] p-1" role="menu" style={{ left: menu.x, top: menu.y }} onPointerDown={e => e.stopPropagation()}>
+              {menu.on === 'part' && <>
+                {menuItem('Rotate', <RotateCw size={14} />, rotateSel, 'R', !can.sel)}
+                {menuItem('Duplicate', <Copy size={14} />, duplicateSel, 'Ctrl D', !gather())}
+                {menuItem('Copy', <Copy size={14} />, () => copySel(), 'Ctrl C', !gather())}
+                {menuItem('Cut', <Scissors size={14} />, cutSel, 'Ctrl X', !gather())}
+                {multi && <div className="border-t border-line px-1 pt-1 pb-0.5">{alignBar}</div>}
+                {selPart && <>
+                  <div className="my-1 border-t border-line" />
+                  {menuItem('See inside, in 3D', <Box size={14} />, () => onLearn(selPart.type))}
+                </>}
+                <div className="my-1 border-t border-line" />
+                {menuItem('Delete', <Trash2 size={14} />, removeSel, 'Del')}
+              </>}
+              {menu.on === 'wire' && <>
+                {selWire?.bend && menuItem('Straighten', <Minus size={14} />, () => update(p => ({ ...p, wires: p.wires.map(w => (w.id === selWire.id ? { ...w, bend: undefined } : w)) })))}
+                {menuItem('Delete wire', <Trash2 size={14} />, removeSel, 'Del')}
+              </>}
+              {menu.on === 'canvas' && <>
+                {menuItem('Paste here', <ClipboardPaste size={14} />, () => paste(mouseAtMenu.current), 'Ctrl V', !clip.current)}
+                {menuItem('Select all', <BoxSelect size={14} />, selectAll, 'Ctrl A', !parts.length)}
+                <div className="my-1 border-t border-line" />
+                {menuItem('Fit to screen', <Maximize2 size={14} />, fit, 'F')}
+                {menuItem(showMat ? 'Hide the mat' : 'Show the mat', <Grid2x2 size={14} />, () => setShowMat(m => !m))}
+                {menuItem(showMap ? 'Hide the minimap' : 'Show the minimap', <MapIcon size={14} />, () => setShowMap(m => !m))}
+                {menuItem('View in 3D', <Rotate3d size={14} />, () => setMode('3d'))}
+              </>}
+            </div>
+          )}
+
+          {/* Several parts selected: the group panel */}
+          {multi && !running && (
+            <div className="popover absolute top-3 right-3 z-20 w-[288px] overflow-hidden">
+              <div className="flex h-11 items-center justify-between border-b border-line px-3">
+                <h3 className="text-[13px] font-semibold">{selIds.length} parts selected</h3>
+                <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setSel(null)} aria-label="Clear selection"><X size={15} /></button>
+              </div>
+              <div className="space-y-3 p-3">
+                <div><span className="label">Align and space</span><div className="mt-1.5">{alignBar}</div></div>
+                <div className="flex flex-wrap gap-1.5 text-[11px] text-fg-2">
+                  {parts.filter(p => selSet.has(p.id)).slice(0, 12).map(p => <span key={p.id} className="chip">{refs.get(p.id) ?? PARTS[p.type].name}</span>)}
+                  {selIds.length > 12 && <span className="chip">+{selIds.length - 12}</span>}
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button className="btn btn-sm" onClick={rotateSel}><RotateCw size={13} /> Rotate</button>
+                  <button className="btn btn-sm" onClick={duplicateSel} disabled={!gather()}><Copy size={13} /> Copy</button>
+                  <button className="btn btn-sm" onClick={removeSel}><Trash2 size={13} /> Delete</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Minimap */}
+          {mode === '2d' && showMap && parts.length > 0 && (
+            <div className="popover absolute right-3 bottom-3 z-10 hidden overflow-hidden p-0 md:block" data-noexport="">
+              <svg width={MAP_W} height={MAP_H} className="block cursor-pointer" aria-label="Minimap"
+                onPointerDown={e => { (e.currentTarget as Element).setPointerCapture(e.pointerId); mapTo(e); }}
+                onPointerMove={e => { if (e.buttons & 1) mapTo(e); }}>
+                <g transform={`translate(${mapOx} ${mapOy}) scale(${mapScale}) translate(${-mat.x0} ${-mat.y0})`}>
+                  <rect x={mat.x0} y={mat.y0} width={mat.x1 - mat.x0} height={mat.y1 - mat.y0} rx={28} style={{ fill: 'var(--surface-2)' }} />
+                  {parts.map(p => { const b = partBounds(p); return <rect key={p.id} x={b.x0} y={b.y0} width={b.x1 - b.x0} height={b.y1 - b.y0} rx={6} style={{ fill: selSet.has(p.id) ? 'var(--fg)' : p.type === 'breadboard' ? 'var(--line-2)' : 'var(--fg-3)' }} />; })}
+                  {wires.map(w => { const a = pinMap.get(w.from), b = pinMap.get(w.to); return a && b ? <line key={w.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={w.color} strokeWidth={6} /> : null; })}
+                  <rect x={-view.x / view.k} y={-view.y / view.k} width={size.w / view.k} height={size.h / view.k} fill="none" style={FG} strokeWidth={2 / mapScale} />
+                </g>
+              </svg>
+            </div>
+          )}
 
           {/* Bottom left: issues while running, otherwise the guide chip */}
           {running && notes.length > 0 ? (
@@ -659,7 +1136,7 @@ export default function Workbench(props: Props) {
             </button>
           ) : null}
 
-          {selPart && (
+          {selPart && !multi && (
             <Inspector key={selPart.id} part={selPart} designator={refs.get(selPart.id) ?? ''} running={running} live={live[selPart.id]} notes={notes.filter(n => n.partId === selPart.id)}
               volts={voltageAt} setProp={(k, v, opt) => setProp(selPart.id, k, v, opt)} onLearn={() => onLearn(selPart.type)} onClose={() => setSel(null)} />
           )}
@@ -680,6 +1157,18 @@ export default function Workbench(props: Props) {
                     ))}
                   </div>
                 </div>
+                {(() => {
+                  const a = pinMap.get(selWire.from), b = pinMap.get(selWire.to);
+                  const g = a && b ? wireGeom(a, b, selWire.bend) : null;
+                  const nm = (pp?: { name: string; part: Part }) => (pp ? `${refs.get(pp.part.id) ?? PARTS[pp.part.type].name} ${pp.name}` : '?');
+                  return (
+                    <dl className="grid grid-cols-[52px_1fr] gap-x-2 gap-y-1 text-[12px]">
+                      <dt className="text-fg-3">From</dt><dd className="truncate font-mono">{nm(a)}</dd>
+                      <dt className="text-fg-3">To</dt><dd className="truncate font-mono">{nm(b)}</dd>
+                      {g && <><dt className="text-fg-3">Length</dt><dd className="font-mono">{Math.round(g.len * MM_PER_UNIT)} mm jumper</dd></>}
+                    </dl>
+                  );
+                })()}
                 <p className="text-[12px] leading-relaxed text-fg-3">Drag the handle in the middle of the wire to bend it around parts. Red for power and black for ground keeps a circuit easy to read.</p>
                 {selWire.bend && (
                   <button className="btn btn-sm w-full" onClick={() => update(p => ({ ...p, wires: p.wires.map(w => (w.id === selWire.id ? { ...w, bend: undefined } : w)) }))}>
@@ -705,6 +1194,7 @@ export default function Workbench(props: Props) {
           )}
           <span className="hidden min-w-0 flex-1 truncate text-fg-3 md:inline">{hint}</span>
           <span className="flex-1 md:hidden" />
+          {mode === '2d' && <span ref={coordRef} className="hidden w-[150px] shrink-0 font-mono text-[11px] text-fg-3 tabular-nums lg:inline" />}
           <span className="hidden shrink-0 tabular-nums sm:inline">{parts.length} parts</span>
           <span className="hidden shrink-0 tabular-nums sm:inline">{wires.length} wires</span>
           <button className="flex shrink-0 items-center gap-1 rounded px-1 hover:text-fg" onClick={onShortcuts} data-tip="Keyboard shortcuts" data-tip-pos="top">
@@ -713,7 +1203,7 @@ export default function Workbench(props: Props) {
         </div>
       </div>
 
-      {ghost && (
+      {ghost && !(ghost.over && mode === '2d') && (
         <div className="popover pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-1/2 p-2" style={{ left: ghost.x, top: ghost.y }}>
           <PartThumb part={thumbPart(ghost.type)} size={60} />
         </div>

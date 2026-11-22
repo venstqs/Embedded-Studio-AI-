@@ -1,18 +1,24 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
-import { BookOpen, Box, Check, ClipboardList, Copy, Cpu, Download, Ellipsis, FilePlus, FolderOpen, GraduationCap, Keyboard, LoaderCircle, Moon, PanelRight, Play, Plus, Search, Square, Sun, X } from 'lucide-react';
+import { ArrowUpRight, BookOpen, Box, Check, CircleCheck, ClipboardList, Copy, Cpu, Download, Ellipsis, FilePlus, FolderOpen, Gauge, GraduationCap, Keyboard, LayoutGrid, LoaderCircle, Moon, Palette, PanelRight, Play, Plus, Search, Settings, Square, Sun, Terminal, X } from 'lucide-react';
 import type { Live, Note, PartType, Project } from './types';
 import { PARTS, PART_ORDER, designators, isBoard, partValue } from './parts/catalog';
 import { ArtDefs } from './parts/PartArt';
 import { STARTERS } from './data/projects';
 import { Simulator } from './sim/simulator';
-import { CompileError } from './sim/compiler';
+import { CompileError, compile } from './sim/compiler';
+import { EMPTY_LOG, appendSerial } from './sim/serialLog';
+import type { SerialLog } from './sim/serialLog';
+import { CODE_THEMES, SPEEDS, getSettings, setSettings, useSettings } from './settings';
+import SettingsDialog from './views/SettingsDialog';
+import type { SettingsSection } from './views/SettingsDialog';
 import { setBuzzer, unlockAudio } from './sim/audio';
 import Workbench from './views/Workbench';
 import type { Update } from './views/Workbench';
 import SidePanel from './views/SidePanel';
 import type { DockTab, Problem } from './views/SidePanel';
 import Home from './views/Home';
-import { CommandPalette, Dialog, Logo, Menu, ShortcutsDialog } from './views/ui';
+import { CommandPalette, Dialog, GithubMark, Logo, Menu, ShortcutsDialog } from './views/ui';
+import { XAVIERLABS } from './brand';
 import type { Command } from './views/ui';
 
 const Discover = lazy(() => import('./views/Discover'));
@@ -121,7 +127,10 @@ export default function App() {
   const [live, setLive] = useState<Record<string, Live>>({});
   const [flow, setFlow] = useState<Record<string, number>>({});
   const [notes, setNotes] = useState<Note[]>([]);
-  const [serial, setSerial] = useState('');
+  const [serial, setSerial] = useState<SerialLog>(EMPTY_LOG);
+  const [settingsOpen, setSettingsOpen] = useState<SettingsSection | null>(null);
+  const prefs = useSettings();
+  const simMs = useRef(0);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [seconds, setSeconds] = useState(0);
   const [notice, setNotice] = useState('');
@@ -148,7 +157,8 @@ export default function App() {
   // Save as you go, into this project's own slot in the list.
   useEffect(() => {
     const untouched = project === pristine.current;
-    if (!untouched) setSaveState('saving');
+    // Undoing back to the untouched starter must not leave the indicator spinning.
+    setSaveState(s => (untouched ? (s === 'saving' ? 'saved' : s) : 'saving'));
     const t = setTimeout(() => {
       setSaved(list => {
         const exists = list.some(x => x.id === currentId);
@@ -183,7 +193,8 @@ export default function App() {
   const start = () => {
     unlockAudio();
     setProblem(null);
-    setSerial('');
+    setSerial(EMPTY_LOG);
+    simMs.current = 0;
     try {
       sim.current = new Simulator(project.parts, project.wires, project.code);
     } catch (e) {
@@ -203,11 +214,13 @@ export default function App() {
     const frame = (now: number) => {
       const s = sim.current;
       if (!s) return;
-      const f = s.step(Math.min(50, now - last));
+      // Simulation speed scales simulated time; millis() and delay() stay in step with it.
+      const f = s.step(Math.min(50, now - last) * getSettings().sim.speed);
+      simMs.current = f.ms;
       last = now;
       const key = JSON.stringify(f.live) + JSON.stringify(f.wires) + f.notes.length;
       if (key !== shown) { shown = key; setLive(f.live); setNotes(f.notes); setFlow(f.wires); }
-      if (f.serial) setSerial(t => (t + f.serial).slice(-12000));
+      if (f.serial) setSerial(log => appendSerial(log, f.serial, f.ms));
       setBuzzer(f.hz);
       const sec = Math.floor(f.ms / 100) / 10;
       if (sec !== lastSecond) { lastSecond = sec; setSeconds(sec); }
@@ -227,7 +240,7 @@ export default function App() {
   const open = (p: Project, id = projectId(), isNew = true) => {
     stop();
     setProblem(null);
-    setSerial('');
+    setSerial(EMPTY_LOG);
     setHist(fresh(p));
     setCurrentId(id);
     pristine.current = isNew ? p : null;
@@ -292,6 +305,22 @@ export default function App() {
   };
 
   const explore = (t: PartType) => { setDiscover(t); setView('discover'); };
+  /** Compile without running, like the Verify button in the Arduino IDE. */
+  const verify = () => {
+    try {
+      compile(project.code);
+      setProblem(null);
+      const lines = project.code.split('\n').length;
+      setToast({ text: `Verified: no errors in ${lines} lines. Ready for the ${board ? PARTS[board.type].name : 'board'}.` });
+    } catch (e) {
+      setProblem({ kind: 'build', line: e instanceof CompileError ? e.line : 1, message: (e as Error).message });
+      setPanel('code');
+    }
+  };
+  const sendSerial = (text: string) => {
+    sim.current?.send(text);
+    setSerial(log => appendSerial(log, text, simMs.current, true));
+  };
   const toggleTheme = () => setTheme(t => (t === 'dark' ? 'light' : 'dark'));
   const togglePanel = () => setPanel(p => (p ? null : 'code'));
 
@@ -303,6 +332,7 @@ export default function App() {
       const typing = !!(e.target as HTMLElement).closest('input,textarea,select,[contenteditable]');
       const mod = e.ctrlKey || e.metaKey;
       if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette(p => !p); return; }
+      if (mod && e.key === ',') { e.preventDefault(); setSettingsOpen(x => (x ? null : 'editor')); return; }
       if (!mod && e.key === '?' && !typing) { e.preventDefault(); setShortcuts(true); return; }
       if (view !== 'build' || !mod) return;
       if (e.key === 'Enter') { e.preventDefault(); keys.current.toggle(); return; }
@@ -335,6 +365,7 @@ export default function App() {
   const buildCommands = (): Command[] => {
     const list: Command[] = [];
     if (view === 'build') {
+      list.push({ id: 'verify', group: 'Simulation', label: 'Verify the sketch compiles', keywords: 'check compile build', icon: <CircleCheck size={14} />, run: verify });
       list.push({ id: 'run', group: 'Simulation', label: running ? 'Stop the simulation' : 'Start the simulation', hint: 'Ctrl ↵', icon: running ? <Square size={14} /> : <Play size={14} />, run: () => keys.current.toggle() });
       list.push({ id: 'panel', group: 'View', label: panel ? 'Hide the side panel' : 'Show the side panel', icon: <PanelRight size={14} />, run: togglePanel });
       if (starter) list.push({ id: 'guide', group: 'View', label: 'Open the project guide', icon: <BookOpen size={14} />, run: () => setPanel('guide') });
@@ -349,6 +380,12 @@ export default function App() {
       { id: 'download', group: 'Project', label: 'Download this project', icon: <Download size={14} />, run: download },
       { id: 'bom', group: 'Project', label: 'Parts list (Bill of Materials)', keywords: 'bom export csv components', icon: <ClipboardList size={14} />, run: () => setBom(true) },
       { id: 'keys', group: 'Help', label: 'Keyboard shortcuts', hint: '?', icon: <Keyboard size={14} />, run: () => setShortcuts(true) },
+      { id: 'settings', group: 'Settings', label: 'Open settings', hint: 'Ctrl ,', keywords: 'preferences options', icon: <Settings size={14} />, run: () => setSettingsOpen('editor') },
+      { id: 'serial-settings', group: 'Settings', label: 'Serial monitor settings', keywords: 'baud line ending timestamps', icon: <Terminal size={14} />, run: () => setSettingsOpen('serial') },
+      ...CODE_THEMES.map(t => ({ id: `code-theme-${t.id}`, group: 'Settings', label: `Code theme: ${t.name}`, keywords: 'editor colors syntax', icon: <Palette size={14} />, run: () => setSettings('editor', { theme: t.id }) })),
+      ...SPEEDS.map(v => ({ id: `speed-${v}`, group: 'Simulation', label: `Simulation speed ${v}×`, keywords: 'slow motion fast time', icon: <Gauge size={14} />, run: () => setSettings('sim', { speed: v }) })),
+      { id: 'xl-site', group: 'XavierLabs', label: 'Visit XavierLabs', keywords: 'portfolio adrian about', icon: <ArrowUpRight size={14} />, run: () => window.open(XAVIERLABS.site, '_blank', 'noopener') },
+      { id: 'xl-github', group: 'XavierLabs', label: 'XavierLabs on GitHub', keywords: 'source code repo', icon: <GithubMark size={14} />, run: () => window.open(XAVIERLABS.github, '_blank', 'noopener') },
     );
     for (const s of saved) list.push({ id: `saved-${s.id}`, group: 'Your projects', label: s.project.name, keywords: 'open recent', icon: <Cpu size={14} />, run: () => openSaved(s.id) });
     for (const s of STARTERS) list.push({ id: `starter-${s.id}`, group: 'Starter projects', label: s.title, keywords: `${s.level} ${s.summary}`, icon: <BookOpen size={14} />, run: () => openStarter(s.id) });
@@ -364,9 +401,19 @@ export default function App() {
       <ArtDefs />
       <header className="relative z-30 flex h-12 shrink-0 items-center gap-2 border-b border-line bg-surface px-2.5 sm:gap-3 sm:px-3">
         <button onClick={() => setView('home')} className="flex shrink-0 items-center gap-2 rounded-md px-1 py-1" aria-label="XavierLabs home">
-          <Logo size={24} />
-          <span className="hidden text-[14px] font-semibold tracking-tight lg:inline">XavierLabs</span>
+          <Logo size={22} />
+          <span className="hidden items-baseline gap-1.5 lg:flex">
+            <span className="text-[14px] font-semibold tracking-tight">XavierLabs</span>
+            <span className="rounded border border-line-2 px-1 font-mono text-[10px] font-medium text-fg-2">IDE</span>
+          </span>
         </button>
+        <Menu label="XavierLabs apps" align="left" trigger={<LayoutGrid size={15} />} items={[
+          { label: 'XavierLabs IDE', hint: 'you are here', icon: <Logo size={14} />, run: () => setView('home') },
+          { label: 'XavierLabs AI', hint: 'research agents', icon: <Terminal size={14} />, run: () => window.open(XAVIERLABS.lab, '_blank', 'noopener') },
+          { label: 'XavierLabs site', hint: 'the lab', icon: <ArrowUpRight size={14} />, run: () => window.open(XAVIERLABS.site, '_blank', 'noopener') },
+          'divider',
+          { label: 'GitHub @venstqs', icon: <GithubMark size={14} />, run: () => window.open(XAVIERLABS.github, '_blank', 'noopener') },
+        ]} />
 
         <nav className="seg shrink-0" aria-label="Sections">
           {tabs.map(([v, label]) => (
@@ -395,6 +442,7 @@ export default function App() {
           <span className="ml-auto flex gap-0.5"><span className="kbd">Ctrl</span><span className="kbd">K</span></span>
         </button>
         <button className="btn btn-ghost btn-icon lg:hidden" onClick={() => setPalette(true)} aria-label="Search" data-tip="Search  Ctrl K"><Search size={15} /></button>
+        <button className="btn btn-ghost btn-icon" onClick={() => setSettingsOpen('editor')} aria-label="Settings" data-tip="Settings  Ctrl ,"><Settings size={15} /></button>
         <button className="btn btn-ghost btn-icon" onClick={toggleTheme} aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} data-tip={theme === 'dark' ? 'Light theme' : 'Dark theme'}>
           {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
         </button>
@@ -406,11 +454,15 @@ export default function App() {
               { label: 'Open a project file', icon: <FolderOpen size={14} />, run: openFile },
               { label: 'Download this project', icon: <Download size={14} />, run: download },
               { label: 'Parts list (BOM)', icon: <ClipboardList size={14} />, run: () => setBom(true) },
+              { label: 'Verify the sketch', icon: <CircleCheck size={14} />, run: verify },
               'divider',
+              { label: 'Settings', icon: <Settings size={14} />, hint: 'Ctrl ,', run: () => setSettingsOpen('editor') },
               { label: 'Keyboard shortcuts', icon: <Keyboard size={14} />, hint: '?', run: () => setShortcuts(true) },
             ]} />
             <button className="btn btn-ghost btn-icon" onClick={togglePanel} aria-pressed={!!panel} aria-label="Toggle side panel" data-tip="Side panel" data-tip-pos="left"><PanelRight size={15} /></button>
             <span className="divider-v hidden sm:block" />
+            <Menu label="Simulation speed" trigger={<span className={`flex items-center gap-1 font-mono text-[11.5px] tabular-nums ${prefs.sim.speed !== 1 ? 'text-fg' : 'text-fg-2'}`}><Gauge size={14} />{prefs.sim.speed}×</span>}
+              items={SPEEDS.map(v => ({ label: `${v === prefs.sim.speed ? '✓ ' : ''}${v}× ${v < 1 ? 'slow motion' : v === 1 ? 'real time' : 'fast forward'}`, run: () => setSettings('sim', { speed: v }) }))} />
             {running ? (
               <button className="btn w-[9.5rem] justify-between" onClick={stop} data-tip="Ctrl Enter" data-tip-pos="left">
                 <span className="flex items-center gap-2"><Square size={11} fill="currentColor" aria-hidden="true" /> Stop</span>
@@ -436,7 +488,7 @@ export default function App() {
         {view === 'build' && (
           <div className="flex h-full min-h-0 flex-col lg:flex-row">
             <div className="min-h-0 min-w-0 flex-1">
-              <Workbench project={project} update={update} running={running} seconds={seconds} live={live} flow={flow} notes={notes}
+              <Workbench dark={theme === 'dark'} project={project} update={update} running={running} seconds={seconds} live={live} flow={flow} notes={notes}
                 voltageAt={r => sim.current?.voltageAt(r) ?? 0} fitKey={fitKey}
                 canUndo={hist.past.length > 0} canRedo={hist.future.length > 0} onUndo={undo} onRedo={redo}
                 onLearn={explore} onToast={text => setToast({ text })} onShortcuts={() => setShortcuts(true)}
@@ -455,8 +507,8 @@ export default function App() {
                 </div>
                 <div className="h-[46%] shrink-0 border-t border-line lg:h-auto lg:w-[var(--pw)] lg:border-t-0" style={{ '--pw': `${panelW}px` } as React.CSSProperties}>
                   <SidePanel tab={panel} setTab={setPanel} project={project} setCode={code => { update(p => ({ ...p, code }), { key: 'code' }); setProblem(null); }}
-                    running={running} boardName={board ? PARTS[board.type].name : null} problem={problem} serial={serial} onClearSerial={() => setSerial('')}
-                    onSend={t => sim.current?.send(t)} notes={notes} onClose={() => setPanel(null)}
+                    running={running} boardName={board ? PARTS[board.type].name : null} problem={problem} serial={serial} onClearSerial={() => setSerial(EMPTY_LOG)}
+                    onSend={sendSerial} onVerify={verify} onSettings={sec => setSettingsOpen((sec as SettingsSection | undefined) ?? 'editor')} onToast={text => setToast({ text })} notes={notes} onClose={() => setPanel(null)}
                     starter={starter} tipsDone={tipsDone} onToggleTip={i => setTipsDone(d => (d.includes(i) ? d.filter(x => x !== i) : [...d, i]))}
                     onExplore={explore} />
                 </div>
@@ -470,13 +522,14 @@ export default function App() {
           </Suspense>
         )}
         {view === 'home' && (
-          <Home saved={saved} currentId={currentId} onOpenSaved={openSaved} onDelete={removeSaved} onOpen={openStarter}
+          <Home dark={theme === 'dark'} saved={saved} currentId={currentId} onOpenSaved={openSaved} onDelete={removeSaved} onOpen={openStarter}
             onBlank={() => open(blankProject())} onDiscover={() => setView('discover')} />
         )}
       </main>
 
       {palette && <CommandPalette commands={buildCommands()} onClose={() => setPalette(false)} />}
       {shortcuts && <ShortcutsDialog onClose={() => setShortcuts(false)} />}
+      {settingsOpen && <SettingsDialog section={settingsOpen} theme={theme} onTheme={setTheme} onClose={() => setSettingsOpen(null)} />}
       {bom && <BomDialog project={project} onCopy={() => setToast({ text: 'Copied parts list as CSV' })} onClose={() => setBom(false)} />}
 
       {toast && (

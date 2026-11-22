@@ -1,14 +1,36 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { CornerDownLeft, Search, X } from 'lucide-react';
 
-/** The XavierLabs mark. Drawn in the inverse colour so it reads on both themes. */
-export function Logo({ size = 24 }: { size?: number }) {
+
+/**
+ * The XavierLabs mark, the same slanted X as the XavierLabs site. Drawn in
+ * the current text colour; `boxed` puts it on a tile like the favicon.
+ */
+export function Logo({ size = 24, boxed = false }: { size?: number; boxed?: boolean }) {
+  const id = useId().replace(/:/g, '');
+  const glyph = (
+    <g transform="translate(6.33 0) skewX(-10)">
+      <polygon points="30,36 36,36 16.19,4 10.19,4" fill="currentColor" mask={`url(#${id})`} />
+      <polygon points="4,36 10,36 29.81,4 23.81,4" fill="currentColor" />
+      <rect x="12.076" y="25.8" width="15.848" height="4" fill="currentColor" />
+    </g>
+  );
   return (
-    <svg width={size} height={size} viewBox="0 0 100 100" aria-hidden="true">
-      <rect width="100" height="100" rx="22" style={{ fill: 'var(--inverse)' }} />
-      <path d="M28 28L50 50L72 28M72 72L50 50L28 72" strokeWidth="8.5" strokeLinecap="round" strokeLinejoin="round" fill="none" style={{ stroke: 'var(--on-inverse)' }} />
-      <circle cx="50" cy="50" r="5.5" style={{ fill: 'var(--on-inverse)' }} />
+    <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden="true" style={{ color: boxed ? 'var(--on-inverse)' : undefined }}>
+      <defs>
+        <mask id={id}><rect width="40" height="40" fill="#fff" /><polygon points="2.4,36 11.6,36 31.41,4 22.21,4" fill="#000" /></mask>
+      </defs>
+      {boxed ? <><rect width="40" height="40" rx="10" style={{ fill: 'var(--inverse)' }} /><g transform="translate(7 7) scale(.65)">{glyph}</g></> : glyph}
+    </svg>
+  );
+}
+
+/** GitHub's mark (brand icons are not in the icon set). */
+export function GithubMark({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.42-2.7 5.39-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z" />
     </svg>
   );
 }
