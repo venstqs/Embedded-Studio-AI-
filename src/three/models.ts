@@ -999,7 +999,7 @@ function scope(): Model {
   };
 }
 
-function ne555(): Model {
+function ne555(name = 'NE555', sub = 'TIMER', custom = false): Model {
   const g = new THREE.Group();
   const W = 9.8, H = 3.4, D = 6.4;
   // Dark epoxy DIP-8 package sitting slightly above the breadboard.
@@ -1012,8 +1012,8 @@ function ne555(): Model {
     c.fillStyle = '#0b0c0e';
     c.beginPath(); c.arc(X(-W / 2), Z(0), 0.85 * 80, -Math.PI / 2, Math.PI / 2); c.fill();
     c.beginPath(); c.arc(X(-3.6), Z(1.9), 0.45 * 80, 0, Math.PI * 2); c.fill();
-    label(c, 'NE555P', X(0.3), Z(-0.4), 1.45 * 80, { color: '#d4d9e0', weight: 700, font: MONO });
-    label(c, 'TIMER', X(0.3), Z(1.3), 0.8 * 80, { color: '#8b9099', weight: 600, font: MONO });
+    label(c, name, X(0.3), Z(-0.4), (name.length > 7 ? 1.1 : 1.45) * 80, { color: '#d4d9e0', weight: 700, font: MONO });
+    label(c, sub, X(0.3), Z(1.3), 0.8 * 80, { color: '#8b9099', weight: 600, font: MONO });
     const top = ['8', '7', '6', '5'], bot = ['1', '2', '3', '4'];
     [-3.81, -1.27, 1.27, 3.81].forEach((x, i) => {
       label(c, top[i], X(x), Z(-2.45), 0.65 * 80, { color: '#6b7280', font: MONO });
@@ -1029,6 +1029,13 @@ function ne555(): Model {
       box(g, 0.48, 3.2, 0.28, STEEL, x, -1.0, z, metal);
     }
   }
+  if (custom) return {
+    group: g,
+    callouts: [
+      { at: [-4.6, 4.2, 0], title: 'Notch & pin 1 dot', text: 'Pin 1 is at the bottom-left, next to the notch. Pins count anticlockwise up to 8.' },
+      { at: [0, 4.3, 0], title: 'Your design inside', text: 'A custom chip holds whatever you describe: resistors, diodes, LEDs, sources and capacitors, wired between its pins.' },
+    ],
+  };
   return {
     group: g,
     callouts: [
@@ -1043,5 +1050,5 @@ function ne555(): Model {
 
 export const MODELS: Record<PartType, () => Model> = {
   led, rgb_led: rgbLed, resistor, button, potentiometer, ldr, buzzer, servo, ultrasonic, dht11, lcd, relay, battery, breadboard, uno, esp32,
-  capacitor, diode, npn, motor, seg7, switch: slideSwitch, multimeter, scope, ne555,
+  capacitor, diode, npn, motor, seg7, switch: slideSwitch, multimeter, scope, ne555: () => ne555(), custom: () => ne555('CUSTOM', 'XAVIERLABS', true),
 };

@@ -11,6 +11,7 @@
  */
 import type { Live, Note, Part, Wire } from '../types.ts';
 import { BOARDS, LED_COLORS, PARTS, SEGMENTS, isBoard, pinPos, ref } from '../parts/catalog.ts';
+import { CHIP_PINS, parseChip, pinNames } from './chip.ts';
 import type { BoardInfo } from '../parts/catalog.ts';
 
 /** A pin driven by the board: a voltage behind a source resistance. `f` is the switching frequency of PWM or tone(). */
@@ -113,6 +114,8 @@ export class Circuit {
       }
       if (part.type === 'button' && part.props.pressed) this.nodes.join(ref(part.id, '1a'), ref(part.id, '2a'));
       if (part.type === 'switch') this.nodes.join(ref(part.id, 'C'), ref(part.id, part.props.pos ? 'B' : 'A'));
+      // A custom chip's inside nodes exist only inside the package.
+      if (part.type === 'custom') for (const n of parseChip(String(part.props.def ?? ''), pinNames(part.props)).internal) this.nodes.add(ref(part.id, n));
     }
     // legs pushed into breadboard holes
     for (const part of this.parts) {
@@ -214,6 +217,17 @@ export class Circuit {
         case 'lcd': R(N(p, 'VCC'), N(p, 'GND'), 200); break;
         case 'dht11': R(N(p, 'VCC'), N(p, 'GND'), 5000); N(p, 'DATA'); break;
         case 'ultrasonic': R(N(p, 'VCC'), N(p, 'GND'), 330); N(p, 'ECHO'); N(p, 'TRIG'); break;
+        case 'custom': {
+          const { els } = parseChip(String(p.props.def ?? ''), pinNames(p.props));
+          els.forEach((e, i) => {
+            if (e.k === 'R') R(N(p, e.a), N(p, e.b), e.ohms);
+            else if (e.k === 'D') D(p, e.a, e.b, e.vf, e.ron, i);
+            else if (e.k === 'V') { const a = N(p, e.a), b = N(p, e.b); if (a !== b) this.src.push({ a, b, g: 1 / e.r, v: e.v, part: p.id, name: 'chip source', limit: 2 }); }
+            else { const a = N(p, e.a), b = N(p, e.b); if (a !== b) this.caps.push({ a, b, farads: e.f, part: `${p.id}#${i}` }); }
+          });
+          for (const id of CHIP_PINS) N(p, id);
+          break;
+        }
         case 'uno': case 'esp32':
           for (const pin of PARTS[p.type].pins) if (pin.kind === 'digital' || pin.kind === 'analog') N(p, pin.id);
           break;

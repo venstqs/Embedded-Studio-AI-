@@ -109,7 +109,7 @@ export default function Bench3D(props: Props) {
     const selBox = new THREE.Box3Helper(new THREE.Box3(), 0xffffff);
     selBox.visible = false;
     scene.add(selBox);
-    let flowDots: { curve: THREE.Curve<THREE.Vector3>; mesh: THREE.InstancedMesh; wire: string }[] = [];
+    let flowDots: { curve: THREE.Curve<THREE.Vector3>; mesh: THREE.InstancedMesh; wire: string; ok: boolean }[] = [];
     const pinHeights = new Map<string, number>();
     const centre = new THREE.Vector3();
     let extent = 200;
@@ -244,7 +244,9 @@ export default function Bench3D(props: Props) {
         const mesh = new THREE.InstancedMesh(dotGeo, dotMat, 6);
         mesh.visible = false;
         flowGroup.add(mesh);
-        flowDots.push({ curve, mesh, wire: w.id });
+        // A zero-length or broken curve has no arc length to slide along.
+        const arc = curve.getLength();
+        flowDots.push({ curve, mesh, wire: w.id, ok: Number.isFinite(arc) && arc > 0.05 });
       }
 
       // Bench size, lighting and shadow camera follow the circuit.
@@ -382,10 +384,11 @@ export default function Bench3D(props: Props) {
         f.mesh.visible = on;
         if (!on) continue;
         const speed = 0.25 + Math.min(1.2, Math.log10(Math.abs(amps) * 1e4) * 0.3);
+        if (!f.ok || !Number.isFinite(speed)) { f.mesh.visible = false; continue; }
         for (let i = 0; i < 6; i++) {
           let u = (t * speed + i / 6) % 1;
           if (amps < 0) u = 1 - u;
-          const p = f.curve.getPointAt(u);
+          const p = f.curve.getPointAt(Math.min(1, Math.max(0, u)));
           m4.makeTranslation(p.x, p.y + 0.15, p.z);
           f.mesh.setMatrixAt(i, m4);
         }

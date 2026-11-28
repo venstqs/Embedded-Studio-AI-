@@ -221,6 +221,18 @@ export const PARTS: Record<PartType, PartSpec> = {
     ],
     defaults: {},
   },
+  custom: {
+    name: 'Custom chip', group: 'Chips', blurb: 'Design your own 8-pin chip: describe what is inside in a few lines, and it simulates for real.',
+    box: [-8, -6, 44, 30],
+    pins: [
+      pin('P8', 'Pin 8', 0, 0, 'passive'), pin('P7', 'Pin 7', 12, 0, 'passive'), pin('P6', 'Pin 6', 24, 0, 'passive'), pin('P5', 'Pin 5', 36, 0, 'passive'),
+      pin('P1', 'Pin 1', 0, 24, 'passive'), pin('P2', 'Pin 2', 12, 24, 'passive'), pin('P3', 'Pin 3', 24, 24, 'passive'), pin('P4', 'Pin 4', 36, 24, 'passive'),
+    ],
+    defaults: {
+      name: 'LED+R', pins: 'A,K,P3,P4,P5,P6,P7,P8',
+      def: '# An LED with its resistor hidden inside.\n# Wire A to + (5 V) and K to ground.\nR A _mid 220\nLED _mid K red',
+    },
+  },
   relay: {
     name: 'Relay module', group: 'Outputs', blurb: 'A switch your code can flip, for loads too big for a pin.',
     box: [-18, -80, 42, 4],
@@ -233,6 +245,7 @@ export const PART_ORDER: PartType[] = [
   'uno', 'esp32', 'breadboard', 'battery',
   'led', 'resistor', 'capacitor', 'diode', 'npn',
   'ne555',
+  'custom',
   'button', 'switch', 'potentiometer',
   'rgb_led', 'seg7', 'buzzer', 'motor', 'servo', 'lcd', 'relay',
   'ldr', 'ultrasonic', 'dht11',
@@ -284,7 +297,7 @@ export function wireGeom(a: { x: number; y: number }, b: { x: number; y: number 
 const PREFIX: Record<PartType, string> = {
   uno: 'MCU', esp32: 'MCU', breadboard: 'BB', battery: 'BT', led: 'LED', rgb_led: 'LED', resistor: 'R', button: 'SW',
   potentiometer: 'RV', ldr: 'LDR', buzzer: 'BZ', servo: 'M', ultrasonic: 'U', dht11: 'U', lcd: 'LCD', relay: 'K',
-  capacitor: 'C', diode: 'D', npn: 'Q', motor: 'M', seg7: 'DS', switch: 'SW', multimeter: 'XMM', scope: 'XSC', ne555: 'U',
+  capacitor: 'C', diode: 'D', npn: 'Q', motor: 'M', seg7: 'DS', switch: 'SW', multimeter: 'XMM', scope: 'XSC', ne555: 'U', custom: 'U',
 };
 
 /** Reference designators (R1, C2, LED1...) in the order parts were added. A label the user typed wins. */
@@ -312,6 +325,7 @@ export function partValue(p: { type: PartType; props: Record<string, number | st
     case 'diode': return '1N4007';
     case 'npn': return '2N2222';
     case 'ne555': return 'NE555';
+    case 'custom': return String(p.props.name || 'Custom chip');
     case 'ldr': return 'GL5528';
     case 'buzzer': return 'piezo';
     case 'servo': return 'SG90';

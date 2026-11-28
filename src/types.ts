@@ -3,7 +3,7 @@ export type PartType =
   | 'led' | 'rgb_led' | 'resistor' | 'button' | 'potentiometer' | 'ldr'
   | 'buzzer' | 'servo' | 'ultrasonic' | 'dht11' | 'lcd' | 'relay'
   | 'capacitor' | 'diode' | 'npn' | 'motor' | 'seg7' | 'switch'
-  | 'multimeter' | 'scope' | 'ne555';
+  | 'multimeter' | 'scope' | 'ne555' | 'custom';
 
 export type Rot = 0 | 90 | 180 | 270;
 
@@ -46,6 +46,42 @@ export interface Project {
   code: string;
   /** Which starter this came from, so its "things to try" can be shown. */
   starter?: string;
+  /** Voltage probes pinned to pins, graphed over time in the Probes panel. */
+  probes?: Probe[];
+  /** Hidden faults for the troubleshooting game. */
+  faults?: Fault[];
+  /** Set when this project is a classroom lesson. */
+  lesson?: Lesson;
+  /** A self-checking challenge this project is working on. */
+  challenge?: string;
+  /** Where each part sits on the schematic, if moved from the automatic layout. */
+  schematic?: Record<string, [number, number]>;
+}
+
+export interface Fault {
+  kind: 'open-wire' | 'dead' | 'value' | 'stuck';
+  /** Part or wire id. */
+  target: string;
+  /** What was wrong, shown when it is found or revealed. */
+  note: string;
+}
+
+export interface Lesson {
+  title: string;
+  text: string;
+  lockParts: boolean;
+  lockWires: boolean;
+  lockCode: boolean;
+}
+
+/** A voltage probe clipped onto one pin (or breadboard hole). */
+export interface Probe {
+  id: string;
+  /** The pin, as part:pin. */
+  ref: string;
+  /** P1, P2 ... */
+  label: string;
+  color: string;
 }
 
 /** What a part is doing right now while the simulation runs. */

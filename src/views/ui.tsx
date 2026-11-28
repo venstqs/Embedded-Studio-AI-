@@ -159,31 +159,60 @@ export function CommandPalette({ commands, onClose }: { commands: Command[]; onC
 
 // ---------- Keyboard shortcuts ----------
 
-const SHORTCUTS: [string[], string][] = [
-  [['Ctrl', 'K'], 'Search actions, projects and parts'],
-  [['Ctrl', 'Enter'], 'Start or stop the simulation'],
-  [['Ctrl', 'Z'], 'Undo'],
-  [['Ctrl', 'Shift', 'Z'], 'Redo'],
-  [['Ctrl', 'D'], 'Duplicate the selected part'],
-  [['R'], 'Rotate the selected part'],
-  [['Del'], 'Delete the selection'],
-  [['Esc'], 'Cancel a wire or clear the selection'],
-  [['Scroll'], 'Zoom the workplane'],
-  [['Drag'], 'Pan, from an empty spot'],
-  [['?'], 'Show this list'],
+const SHORTCUTS: [string, [string[], string][]][] = [
+  ['General', [
+    [['Ctrl', 'K'], 'Search actions, projects and parts'],
+    [['Ctrl', 'Enter'], 'Start or stop the simulation'],
+    [['Ctrl', ','], 'Settings'],
+    [['Ctrl', 'Z'], 'Undo'],
+    [['Ctrl', 'Shift', 'Z'], 'Redo'],
+    [['?'], 'Show this list'],
+  ]],
+  ['Tools', [
+    [['V'], 'Select'],
+    [['H'], 'Pan (or hold Space)'],
+    [['P'], 'Probe a pin'],
+    [['M'], 'Measure'],
+    [['F'], 'Fit to screen'],
+    [['Esc'], 'Cancel, clear the selection'],
+  ]],
+  ['Editing', [
+    [['Drag'], 'Box select: right inside, left touching'],
+    [['Shift', 'Click'], 'Add to the selection'],
+    [['Ctrl', 'A'], 'Select everything'],
+    [['Ctrl', 'C'], 'Copy'],
+    [['Ctrl', 'V'], 'Paste'],
+    [['Ctrl', 'D'], 'Duplicate'],
+    [['R'], 'Rotate'],
+    [['←', '→'], 'Nudge (Shift for 5 holes)'],
+    [['Del'], 'Delete the selection'],
+  ]],
+  ['Code', [
+    [['Ctrl', 'F'], 'Find and replace'],
+    [['Ctrl', 'Shift', 'I'], 'Tidy indentation'],
+    [['Tab'], 'Indent'],
+  ]],
 ];
 
 export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
   return (
-    <Dialog title="Keyboard shortcuts" onClose={onClose}>
-      <dl className="flex flex-col p-2">
-        {SHORTCUTS.map(([keys, what]) => (
-          <div key={what} className="flex h-9 items-center justify-between gap-3 rounded-md px-2 hover:bg-surface-2">
-            <dt className="text-fg-2">{what}</dt>
-            <dd className="flex shrink-0 gap-1">{keys.map(k => <kbd key={k} className="kbd">{k}</kbd>)}</dd>
-          </div>
+    <Dialog title="Keyboard shortcuts" onClose={onClose} width={720}>
+      <div className="scroll grid max-h-[70vh] gap-x-6 overflow-auto p-4 sm:grid-cols-2">
+        {SHORTCUTS.map(([group, list]) => (
+          <section key={group} className="mb-3">
+            <h3 className="eyebrow mb-1 px-2">{group}</h3>
+            <dl>
+              {list.map(([keys, what]) => (
+                <div key={what} className="flex h-8 items-center justify-between gap-3 rounded-md px-2 text-[12.5px] hover:bg-surface-2">
+                  <dt className="text-fg-2">{what}</dt>
+                  <dd className="flex shrink-0 gap-1">{keys.map(k => <kbd key={k} className="kbd">{k}</kbd>)}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
         ))}
-      </dl>
+      </div>
     </Dialog>
   );
 }
+

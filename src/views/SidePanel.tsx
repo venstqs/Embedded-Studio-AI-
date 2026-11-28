@@ -4,25 +4,23 @@ import Prism from 'prismjs';
 import 'prismjs/components/prism-c';
 import 'prismjs/components/prism-cpp';
 import {
-  ArrowDown, ArrowRight, ArrowUp, ChartLine, Check, ChevronDown, ChevronUp, CircleAlert, CircleCheck, Clock, Copy, Download, Ellipsis, Eraser, FileCode,
-  Lock, Pause, Play, Search, Send, Settings2, Sparkles, TextAlignStart, Type, WrapText, X,
+  ArrowDown, ArrowRight, ArrowUp, Check, CircleAlert, CircleCheck, Copy, Download, Ellipsis, FileCode,
+  Circle, Lightbulb, Lock, Search, Send, Settings2, Sparkles, TextAlignStart, Trophy, Type, WrapText, X,
 } from 'lucide-react';
 import type { Note, PartType, Project } from '../types';
 import { PARTS } from '../parts/catalog';
 import { PartThumb } from '../parts/PartArt';
 import type { Starter } from '../data/projects';
+import type { Challenge, Criterion } from '../data/challenges';
 import { askTutor, loadSettings, saveSettings } from '../services/aiService';
 import type { TutorSettings } from '../services/aiService';
-import { BAUDS, CODE_THEMES, setSettings, sketchBaud, useSettings } from '../settings';
-import type { LineEnding } from '../settings';
-import { garble, hex, received, stamp } from '../sim/serialLog';
-import type { SerialLine, SerialLog } from '../sim/serialLog';
+import { CODE_THEMES, setSettings, useSettings } from '../settings';
 import { Menu } from './ui';
 
 // The editor ships as CommonJS; depending on the bundler its component is the module or its .default.
 const Editor = ((EditorModule as unknown as { default?: typeof EditorModule }).default ?? EditorModule);
 
-export type DockTab = 'code' | 'guide' | 'tutor';
+export type DockTab = 'code' | 'guide' | 'tutor' | 'challenge';
 export interface Problem { line: number; message: string; kind: 'build' | 'run' }
 
 interface Props {
@@ -33,9 +31,6 @@ interface Props {
   running: boolean;
   boardName: string | null;
   problem: Problem | null;
-  serial: SerialLog;
-  onClearSerial: () => void;
-  onSend: (text: string) => void;
   notes: Note[];
   onClose: () => void;
   starter?: Starter;
@@ -46,10 +41,18 @@ interface Props {
   onVerify: () => void;
   onSettings: (section?: string) => void;
   onToast: (text: string) => void;
+  /** The challenge this project is working on, with its live checklist. */
+  challenge?: { c: Challenge; crit: Criterion[]; done: boolean; next?: Challenge };
+  onNextChallenge: (id: string) => void;
+  /** A classroom lesson locked the code. */
+  codeLocked: boolean;
 }
 
 export default function SidePanel(p: Props) {
-  const tabs: [DockTab, string][] = [['code', 'Code'], ...(p.starter ? [['guide', 'Guide'] as [DockTab, string]] : []), ['tutor', 'Tutor']];
+  const tabs: [DockTab, string][] = [
+    ...(p.challenge ? [['challenge', 'Challenge'] as [DockTab, string]] : []),
+    ['code', 'Code'], ...(p.starter && !p.challenge ? [['guide', 'Guide'] as [DockTab, string]] : []), ['tutor', 'Tutor'],
+  ];
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface">
       <div className="flex shrink-0 items-center border-b border-line pr-1.5 pl-2">
@@ -58,6 +61,9 @@ export default function SidePanel(p: Props) {
             <button key={t} role="tab" aria-selected={p.tab === t} onClick={() => p.setTab(t)}>
               {label}
               {t === 'guide' && p.starter && <span className="font-mono text-[11px] text-fg-3">{p.tipsDone.length}/{p.starter.tryIt.length}</span>}
+              {t === 'challenge' && p.challenge && (p.challenge.done
+                ? <Trophy size={12} className="text-ok" />
+                : <span className="font-mono text-[11px] text-fg-3">{p.challenge.crit.filter(x => x.ok).length}/{p.challenge.crit.length}</span>)}
             </button>
           ))}
         </div>
@@ -68,6 +74,7 @@ export default function SidePanel(p: Props) {
       {p.tab === 'code' && <Code {...p} />}
       {p.tab === 'guide' && p.starter && <Guide {...p} starter={p.starter} />}
       {p.tab === 'tutor' && <Tutor project={p.project} notes={p.notes} />}
+      {p.tab === 'challenge' && p.challenge && <ChallengeView {...p.challenge} running={p.running} onNext={p.onNextChallenge} />}
     </div>
   );
 }
@@ -108,7 +115,9 @@ function saveFile(name: string, text: string, type = 'text/plain') {
 }
 
 function Code(p: Props) {
-  const { project, setCode, running, boardName, problem, onVerify, onSettings, onToast } = p;
+  const { project, boardName, problem, onVerify, onSettings, onToast, codeLocked } = p;
+  const running = p.running || codeLocked;
+  const setCode = (c: string) => { if (!codeLocked) p.setCode(c); };
   const { editor } = useSettings();
   const code = project.code;
   const lines = useMemo(() => code.split('\n').length, [code]);
@@ -117,7 +126,6 @@ function Code(p: Props) {
   const caret = useRef<[number, number] | null>(null);
   const [pos, setPos] = useState({ ln: 1, col: 1, sel: 0 });
   const [find, setFind] = useState<{ q: string; r: string; i: number } | null>(null);
-  const [serialOpen, setSerialOpen] = useState(true);
   const area = () => document.getElementById('sketch') as HTMLTextAreaElement | null;
 
   useLayoutEffect(() => {
@@ -211,7 +219,7 @@ function Code(p: Props) {
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-line bg-surface pr-1.5 pl-3 text-[12px]">
         <FileCode size={13} className="text-fg-3" aria-hidden="true" />
         <span className="font-mono text-fg">sketch.ino</span>
-        {running && <span className="chip ml-1 h-5 gap-1 text-[11px]"><Lock size={10} aria-hidden="true" />Read only</span>}
+        {running && <span className="chip ml-1 h-5 gap-1 text-[11px]"><Lock size={10} aria-hidden="true" />{codeLocked ? 'Locked by the lesson' : 'Read only'}</span>}
         <span className="flex-1" />
         <button className="btn btn-ghost btn-sm gap-1.5" onClick={onVerify} disabled={!boardName} data-tip="Check that the code compiles">
           <CircleCheck size={14} aria-hidden="true" /><span className="hidden xl:inline">Verify</span>
@@ -248,7 +256,7 @@ function Code(p: Props) {
         </div>
       )}
 
-      <div ref={scroller} className={`scroll code-area min-h-0 overflow-auto ${editor.wrap ? 'wrap' : ''} ${serialOpen ? 'flex-[3]' : 'flex-1'}`}
+      <div ref={scroller} className={`scroll code-area min-h-0 overflow-auto ${editor.wrap ? 'wrap' : ''} flex-1`}
         style={{ fontSize: editor.fontSize, lineHeight: `${lh}px` }} onKeyUp={readPos} onMouseUp={readPos}>
         <div className="flex min-h-full">
           {showGutter && (
@@ -301,192 +309,7 @@ function Code(p: Props) {
         <p className="shrink-0 border-t border-line bg-surface-2 px-3 py-2 text-[12.5px] text-fg-2">This circuit has no board, so the sketch isn’t used. Add an Arduino Uno to run code.</p>
       )}
 
-      <SerialMonitor {...p} open={serialOpen} setOpen={setSerialOpen} />
     </>
-  );
-}
-
-// ---------- Serial monitor ----------
-
-const ENDINGS: [LineEnding, string, string][] = [['none', 'No line ending', ''], ['nl', 'Newline', '\n'], ['cr', 'Carriage return', '\r'], ['both', 'Both NL & CR', '\r\n']];
-
-function SerialMonitor({ project, running, serial, onClearSerial, onSend, onToast, open, setOpen }: Props & { open: boolean; setOpen: (o: boolean) => void }) {
-  const { serial: cfg } = useSettings();
-  const out = useRef<HTMLDivElement>(null);
-  const [input, setInput] = useState('');
-  const [graph, setGraph] = useState(false);
-  const [filter, setFilter] = useState<string | null>(null);
-  const [frozen, setFrozen] = useState<SerialLine[] | null>(null);
-  const history = useRef<string[]>([]);
-  const hpos = useRef(-1);
-  const want = sketchBaud(project.code);
-  const mismatch = want !== null && want !== cfg.baud;
-  const shown = useMemo(() => {
-    let l = frozen ?? serial.lines;
-    if (!cfg.echo) l = l.filter(x => !x.tx);
-    if (filter) { const q = filter.toLowerCase(); l = l.filter(x => x.s.toLowerCase().includes(q)); }
-    return l.slice(-600);
-  }, [serial.lines, frozen, cfg.echo, filter]);
-  useEffect(() => {
-    const el = out.current;
-    if (el && cfg.autoscroll && !frozen) el.scrollTop = el.scrollHeight;
-  }, [shown, graph, cfg.autoscroll, frozen]);
-
-  const send = () => {
-    if (!input || !running) return;
-    onSend(input + (ENDINGS.find(e => e[0] === cfg.lineEnding)?.[2] ?? ''));
-    history.current = [input, ...history.current.filter(h => h !== input)].slice(0, 30);
-    hpos.current = -1;
-    setInput('');
-  };
-  const text = (l: SerialLine) => (l.tx ? l.s : mismatch ? garble(l.s, cfg.baud / want!) : l.s);
-  const logText = () => serial.lines.map(l => `${cfg.timestamps ? `${stamp(l.t)} ${l.tx ? '<-' : '->'} ` : ''}${l.tx ? `> ${l.s}` : text(l)}`).join('\n');
-
-  return (
-    <div className={`flex min-h-0 flex-col border-t border-line ${open ? 'flex-[2]' : 'shrink-0'}`}>
-      <div className="flex h-9 shrink-0 items-center gap-1 pr-1.5 pl-2">
-        <button className="flex shrink-0 items-center gap-1.5 rounded px-1 text-[12px] font-semibold whitespace-nowrap" onClick={() => setOpen(!open)} aria-expanded={open}>
-          {open ? <ChevronDown size={13} className="text-fg-3" /> : <ChevronUp size={13} className="text-fg-3" />}Serial monitor
-          {running && <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-ok" aria-hidden="true" />}
-        </button>
-        <span className="flex-1" />
-        {open && (
-          <>
-            <select className="input h-7 w-auto py-0 pr-6 pl-2 font-mono text-[11px]" value={cfg.baud} onChange={e => setSettings('serial', { baud: +e.target.value })} aria-label="Baud rate" data-tip="Baud rate">
-              {BAUDS.map(b => <option key={b} value={b}>{b} baud</option>)}
-            </select>
-            <div className="seg" role="group" aria-label="Serial view">
-              <button onClick={() => setGraph(false)} aria-pressed={!graph} data-tip="Text"><TextAlignStart size={12} /><span className="sr-only">Text</span></button>
-              <button onClick={() => setGraph(true)} aria-pressed={graph} data-tip="Graph"><ChartLine size={12} /><span className="sr-only">Graph</span></button>
-            </div>
-            <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setFrozen(f => (f ? null : serial.lines))} aria-pressed={!!frozen} aria-label={frozen ? 'Resume' : 'Pause the view'} data-tip={frozen ? 'Resume' : 'Pause view'}>
-              {frozen ? <Play size={13} /> : <Pause size={13} />}
-            </button>
-            <Menu label="Serial options" align="right" trigger={<Ellipsis size={15} />} items={[
-              { label: `${cfg.timestamps ? '✓ ' : ''}Show timestamps`, icon: <Clock size={14} />, run: () => setSettings('serial', { timestamps: !cfg.timestamps }) },
-              { label: `${cfg.autoscroll ? '✓ ' : ''}Autoscroll`, icon: <ArrowDown size={14} />, run: () => setSettings('serial', { autoscroll: !cfg.autoscroll }) },
-              { label: `${cfg.echo ? '✓ ' : ''}Show what I send`, icon: <Send size={14} />, run: () => setSettings('serial', { echo: !cfg.echo }) },
-              { label: cfg.view === 'hex' ? 'Show as text' : 'Show as hex bytes', icon: <Type size={14} />, run: () => setSettings('serial', { view: cfg.view === 'hex' ? 'text' : 'hex' }) },
-              { label: filter === null ? 'Filter lines' : 'Stop filtering', icon: <Search size={14} />, run: () => setFilter(f => (f === null ? '' : null)) },
-              'divider',
-              { label: 'Copy output', icon: <Copy size={14} />, run: () => { void navigator.clipboard?.writeText(logText()); onToast('Copied the serial output'); } },
-              { label: 'Save log (.txt)', icon: <Download size={14} />, run: () => saveFile('serial-log.txt', logText()) },
-            ]} />
-            <button onClick={() => { onClearSerial(); setFrozen(null); }} className="btn btn-ghost btn-sm btn-icon" aria-label="Clear" data-tip="Clear" data-tip-pos="left"><Eraser size={13} /></button>
-          </>
-        )}
-      </div>
-      {open && (
-        <>
-          {mismatch && (
-            <div className="flex shrink-0 items-center gap-2 border-y border-line bg-surface-2 px-3 py-1.5 text-[12px] text-fg-2">
-              <CircleAlert size={13} className="shrink-0 text-warn" />
-              <span className="flex-1">Your sketch uses <code className="font-mono text-fg">Serial.begin({want})</code>, so text at {cfg.baud} baud comes out garbled.</span>
-              <button className="btn btn-sm shrink-0" onClick={() => setSettings('serial', { baud: want! })}>Use {want}</button>
-            </div>
-          )}
-          {filter !== null && (
-            <div className="flex shrink-0 items-center gap-1.5 px-2 pb-1.5">
-              <Search size={12} className="text-fg-3" />
-              <input autoFocus className="input h-7 font-mono text-[12px]" placeholder="Only show lines containing…" value={filter} onChange={e => setFilter(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') setFilter(null); }} />
-              <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setFilter(null)} aria-label="Stop filtering"><X size={13} /></button>
-            </div>
-          )}
-          {graph ? <Plotter lines={received(serial).filter((_, i, a) => i < a.length - (serial.open ? 1 : 0))} running={running} garbled={mismatch} /> : (
-            <div ref={out} className="scroll min-h-0 flex-1 overflow-auto px-3 py-1.5 font-mono text-[12px] leading-5 text-fg" style={{ background: 'var(--code-bg)' }} role="log" aria-live="off">
-              {shown.length ? shown.map((l, i) => (
-                <div key={i} className={`whitespace-pre-wrap break-all ${l.tx ? 'text-fg-3' : ''}`}>
-                  {cfg.timestamps && <span className="mr-2 text-fg-3 select-none">{stamp(l.t)} {l.tx ? '←' : '→'}</span>}
-                  {l.tx ? <span>{!cfg.timestamps && <ArrowRight size={10} className="mr-1 inline" />}{l.s}</span> : cfg.view === 'hex' ? <span className="text-fg-2">{hex(text(l))}</span> : text(l)}
-                </div>
-              )) : <span className="text-fg-3">{filter ? 'No lines match.' : running ? 'Nothing printed yet. Use Serial.println() in your sketch.' : 'Text from Serial.print() appears here while the simulation runs.'}</span>}
-              {frozen && <div className="sticky bottom-0 mt-1 w-fit rounded bg-surface-3 px-2 py-0.5 text-[11px] text-fg-2">Paused. New output is still being recorded.</div>}
-            </div>
-          )}
-          <form className="flex shrink-0 gap-1.5 border-t border-line p-2" onSubmit={e => { e.preventDefault(); send(); }}>
-            <input value={input} onChange={e => setInput(e.target.value)} disabled={!running} aria-label="Send text to the board"
-              placeholder={running ? 'Send text to the board (↑ for history)' : 'Start the simulation to send text'}
-              onKeyDown={e => {
-                if (e.key === 'ArrowUp' && history.current.length) { e.preventDefault(); hpos.current = Math.min(history.current.length - 1, hpos.current + 1); setInput(history.current[hpos.current]); }
-                if (e.key === 'ArrowDown') { e.preventDefault(); hpos.current = Math.max(-1, hpos.current - 1); setInput(hpos.current < 0 ? '' : history.current[hpos.current]); }
-              }}
-              className="input min-w-0 font-mono text-[12px]" />
-            <select className="input w-auto shrink-0 py-0 pr-6 pl-2 text-[11px]" value={cfg.lineEnding} onChange={e => setSettings('serial', { lineEnding: e.target.value as LineEnding })} aria-label="Line ending" data-tip="Added to what you send" data-tip-pos="top">
-              {ENDINGS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-            </select>
-            <button type="submit" disabled={!running || !input} className="btn btn-icon shrink-0" aria-label="Send"><Send size={13} /></button>
-          </form>
-          <div className="flex h-5 shrink-0 items-center gap-3 overflow-hidden border-t border-line bg-surface px-3 font-mono text-[10px] whitespace-nowrap text-fg-3">
-            <span>{serial.lines.filter(l => !l.tx).length} lines</span>
-            {cfg.timestamps && <span>timestamps on</span>}
-            {cfg.view === 'hex' && <span>hex</span>}
-            <span className="flex-1" />
-            <span>{cfg.baud} baud · {ENDINGS.find(e => e[0] === cfg.lineEnding)?.[1]}</span>
-            {!cfg.autoscroll && <span className="flex items-center gap-1"><Check size={9} />scroll locked</span>}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-const DASH = ['', '6 4', '2 3', '10 3 2 3'];
-
-/**
- * Serial plotter: graphs the numbers in each printed line. "12 34" or
- * "temp:21.5,hum:60" both become one point per series; labels name the series.
- */
-function Plotter({ lines, running, garbled }: { lines: SerialLine[]; running: boolean; garbled: boolean }) {
-  const { data, names } = useMemo(() => {
-    const rows: number[][] = [];
-    let names: string[] = [];
-    for (const line of lines.slice(-200)) {
-      const nums = line.s.match(/-?\d+(?:\.\d+)?/g);
-      if (!nums) continue;
-      rows.push(nums.slice(0, 4).map(Number));
-      const labels = [...line.s.matchAll(/([A-Za-z_][\w ]*?)\s*[:=]\s*-?\d/g)].map(m => m[1].trim());
-      if (labels.length) names = labels;
-    }
-    return { data: rows, names };
-  }, [lines]);
-  const series = Math.max(0, ...data.map(r => r.length));
-  if (garbled) return <p className="flex-1 px-3 py-2 text-[12.5px] text-fg-3" style={{ background: 'var(--code-bg)' }}>The baud rate doesn’t match the sketch, so there are no numbers to graph.</p>;
-  if (!data.length) {
-    return <p className="flex-1 px-3 py-2 text-[12.5px] text-fg-3" style={{ background: 'var(--code-bg)' }}>{running ? 'Waiting for numbers. Print one number per line, for example Serial.println(value);' : 'Numbers printed with Serial.println() are graphed here while the simulation runs.'}</p>;
-  }
-  const all = data.flat();
-  let lo = Math.min(...all), hi = Math.max(...all);
-  if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
-  const pad = (hi - lo) * 0.08;
-  lo -= pad; hi += pad;
-  const W = 400, H = 160, n = Math.max(2, data.length);
-  const x = (i: number) => (i / (n - 1)) * W;
-  const y = (v: number) => H - ((v - lo) / (hi - lo)) * H;
-  const fmt = (v: number) => (Math.abs(v) >= 100 ? Math.round(v).toString() : v.toFixed(1));
-  const last = data[data.length - 1];
-  return (
-    <div className="flex min-h-0 flex-1 flex-col px-3 pb-2" style={{ background: 'var(--code-bg)' }}>
-      <div className="flex shrink-0 flex-wrap gap-x-4 gap-y-1 py-1 font-mono text-[11.5px] text-fg">
-        {Array.from({ length: series }, (_, k) => (
-          <span key={k} className="flex items-center gap-1.5">
-            <svg width="18" height="6" aria-hidden="true"><line x1="0" y1="3" x2="18" y2="3" style={{ stroke: 'var(--fg)' }} strokeWidth="2" strokeDasharray={DASH[k]} /></svg>
-            {names[k] && <span className="text-fg-3">{names[k]}</span>}
-            {last[k] !== undefined ? fmt(last[k]) : '–'}
-          </span>
-        ))}
-      </div>
-      <div className="relative min-h-0 flex-1">
-        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full" role="img" aria-label={`Graph of the last ${data.length} printed values`}>
-          {[0.25, 0.5, 0.75].map(f => <line key={f} x1={0} x2={W} y1={H * f} y2={H * f} style={{ stroke: 'var(--line)' }} vectorEffect="non-scaling-stroke" />)}
-          {Array.from({ length: series }, (_, k) => (
-            <polyline key={k} fill="none" style={{ stroke: 'var(--fg)' }} strokeWidth={1.6} strokeDasharray={DASH[k]} vectorEffect="non-scaling-stroke" strokeLinejoin="round"
-              points={data.map((r, i) => (r[k] === undefined ? null : `${x(i)},${y(r[k])}`)).filter(Boolean).join(' ')} />
-          ))}
-        </svg>
-        <span className="pointer-events-none absolute top-0 left-0 rounded px-1 font-mono text-[10px] text-fg-3" style={{ background: 'var(--code-bg)' }}>{fmt(hi)}</span>
-        <span className="pointer-events-none absolute bottom-0 left-0 rounded px-1 font-mono text-[10px] text-fg-3" style={{ background: 'var(--code-bg)' }}>{fmt(lo)}</span>
-      </div>
-    </div>
   );
 }
 
@@ -654,6 +477,72 @@ function Tutor({ project, notes }: { project: Project; notes: Note[] }) {
         <input value={text} onChange={e => setText(e.target.value)} disabled={!key} aria-label="Ask the tutor" placeholder={key ? 'Ask a question' : 'Add a key above to ask questions'} className="input" />
         <button type="submit" disabled={!key || busy || !text.trim()} className="btn btn-primary btn-icon shrink-0" aria-label="Ask"><Send size={14} /></button>
       </form>
+    </div>
+  );
+}
+
+// ---------- Challenge ----------
+
+const LEVEL_NAME = ['', 'Warm-up', 'Getting there', 'Expert'];
+
+function ChallengeView({ c, crit, done, next, running, onNext }: { c: Challenge; crit: Criterion[]; done: boolean; next?: Challenge; running: boolean; onNext: (id: string) => void }) {
+  const [shown, setShown] = useState(0);
+  useEffect(() => setShown(0), [c.id]);
+  const met = crit.filter(x => x.ok).length;
+  return (
+    <div className="scroll min-h-0 flex-1 overflow-auto p-4">
+      <div className="flex items-center gap-2">
+        <span className="chip">{LEVEL_NAME[c.level]}</span>
+        <span className="flex gap-0.5" aria-label={`Difficulty ${c.level} of 3`}>{[1, 2, 3].map(i => <span key={i} className={`h-1.5 w-3 rounded-full ${i <= c.level ? 'bg-fg' : 'bg-line-2'}`} />)}</span>
+      </div>
+      <h2 className="mt-3 text-[18px] font-semibold tracking-tight">{c.title}</h2>
+      <p className="mt-1 text-[13.5px] font-medium text-fg">{c.goal}</p>
+      <p className="mt-2 text-[13px] leading-relaxed text-fg-2">{c.brief}</p>
+
+      {done ? (
+        <div className="mt-5 rounded-xl border border-line-2 bg-surface-2 p-4 text-center">
+          <span className="mx-auto grid h-11 w-11 place-items-center rounded-full bg-inverse text-on-inverse"><Trophy size={20} /></span>
+          <p className="mt-3 text-[15px] font-semibold">Challenge complete</p>
+          <p className="mt-1 text-[12.5px] text-fg-2">The simulator checked it: every goal was met while it ran.</p>
+          {next && <button className="btn btn-primary mt-4 w-full" onClick={() => onNext(next.id)}>Next: {next.title} <ArrowRight size={14} /></button>}
+        </div>
+      ) : null}
+
+      <div className="mt-5">
+        <div className="flex items-center justify-between">
+          <h3 className="eyebrow">Goals</h3>
+          <span className="font-mono text-[11px] text-fg-3">{met}/{crit.length}</span>
+        </div>
+        <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-3"><div className="h-full rounded-full bg-ok transition-all duration-500" style={{ width: `${crit.length ? (met / crit.length) * 100 : 0}%` }} /></div>
+        <ul className="mt-3 space-y-1.5">
+          {crit.map(x => (
+            <li key={x.label} className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-[13px] transition-colors ${x.ok ? 'border-line-2 bg-surface-2' : 'border-line'}`}>
+              {x.ok ? <Check size={15} className="mt-0.5 shrink-0 text-ok" /> : <Circle size={15} className="mt-0.5 shrink-0 text-fg-3" />}
+              <span className="min-w-0 flex-1">
+                <span className={x.ok ? 'text-fg' : 'text-fg-2'}>{x.label}</span>
+                {x.detail && <span className="mt-0.5 block font-mono text-[11px] text-fg-3">{x.detail}</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
+        {!running && !done && <p className="mt-3 text-[12px] text-fg-3">Goals are checked live while the simulation runs. Press Start (Ctrl Enter).</p>}
+      </div>
+
+      <div className="mt-6">
+        <h3 className="eyebrow">Hints</h3>
+        <ol className="mt-2 space-y-1.5">
+          {c.hints.slice(0, shown).map((h, i) => (
+            <li key={i} className="flex gap-2.5 rounded-lg bg-surface-2 px-3 py-2.5 text-[12.5px] leading-relaxed text-fg-2">
+              <Lightbulb size={14} className="mt-0.5 shrink-0 text-fg-3" />{h}
+            </li>
+          ))}
+        </ol>
+        {shown < c.hints.length && (
+          <button className="btn btn-sm mt-2" onClick={() => setShown(n => n + 1)}>
+            <Lightbulb size={13} /> {shown ? 'Another hint' : 'Show a hint'} <span className="font-mono text-[10.5px] text-fg-3">{shown + 1}/{c.hints.length}</span>
+          </button>
+        )}
+      </div>
     </div>
   );
 }

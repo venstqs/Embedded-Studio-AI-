@@ -152,6 +152,16 @@ export const LESSONS: Record<PartType, Lesson> = {
     facts: [['Screen', '10 divisions across, 8 up'], ['Time per division', '0.5 ms to 1 s'], ['Input', '10 MΩ, so it barely disturbs the circuit']],
     watchOut: 'The scope measures against its GND clip. Clip it anywhere other than ground and every reading shifts.',
   },
+  custom: {
+    how: 'A custom chip is a package you fill yourself. Real chips are built the same way: a tiny circuit of transistors, resistors and diodes sealed in plastic, with only the pins showing. Describe the inside in a few lines (R for a resistor, LED, D for a diode, V for a source, C for a capacitor) and the simulator wires it up for real.',
+    wiring: [
+      'Pick a template in the inspector, or write your own description, one element per line: R A _mid 220 puts a 220 Ω resistor between pin A and an inside node.',
+      'Name the pins so the chip is easy to wire, then push it across the middle gap of the breadboard like any DIP chip.',
+      'Probe its pins (P) to check it does what you designed.',
+    ],
+    facts: [['Package', 'DIP-8, like the 555'], ['Inside', 'R, D, Z, LED, V and C elements'], ['Inside nodes', 'Names starting with _ stay hidden']],
+    watchOut: 'Pin 1 is bottom-left beside the notch. A source (V) inside the chip can power a circuit, so double-check which pins it drives.',
+  },
   ne555: {
     how: 'The 555 timer is an eight-pin chip with two voltage comparators and a memory bit inside. It watches the voltage on a charging capacitor: when it reaches two-thirds of the supply voltage it flips the output off and drains the capacitor; when it falls to one-third it flips back on. That simple loop makes a steady blink or tone with no microcontroller at all.',
     wiring: [

@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowUpRight, BookOpen, Box, Check, CircleCheck, ClipboardList, Copy, Cpu, Download, Ellipsis, FilePlus, FolderOpen, Gauge, GraduationCap, Keyboard, LayoutGrid, LoaderCircle, Moon, Palette, PanelRight, Play, Plus, Search, Settings, Square, Sun, Terminal, X } from 'lucide-react';
+import { ArrowUpRight, BookOpen, Bug, Pause, Trophy, Box, Check, CircleCheck, ClipboardList, Copy, Cpu, Download, Ellipsis, FilePlus, FolderOpen, Gauge, GraduationCap, Keyboard, LayoutGrid, LoaderCircle, Moon, Palette, PanelRight, Play, Plus, Search, Settings, Share2, Square, Sun, Terminal, X } from 'lucide-react';
 import type { Live, Note, PartType, Project } from './types';
 import { PARTS, PART_ORDER, designators, isBoard, partValue } from './parts/catalog';
 import { ArtDefs } from './parts/PartArt';
@@ -10,6 +10,12 @@ import { EMPTY_LOG, appendSerial } from './sim/serialLog';
 import type { SerialLog } from './sim/serialLog';
 import { CODE_THEMES, SPEEDS, getSettings, setSettings, useSettings } from './settings';
 import SettingsDialog from './views/SettingsDialog';
+import { SerialPanel } from './views/Dock';
+import { ProbeRecorder } from './sim/probes';
+import { SHARE_PREFIX, decodeProject, encodeProject } from './share';
+import { applyFaults, randomFault } from './sim/faults';
+import { CHALLENGES, LiveMonitor, loadDone, saveDone } from './data/challenges';
+import type { Criterion } from './data/challenges';
 import type { SettingsSection } from './views/SettingsDialog';
 import { setBuzzer, unlockAudio } from './sim/audio';
 import Workbench from './views/Workbench';
@@ -131,6 +137,20 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState<SettingsSection | null>(null);
   const prefs = useSettings();
   const simMs = useRef(0);
+  const recorder = useRef(new ProbeRecorder());
+  /** Every frame of the last run, for the replay bar. */
+  const frames = useRef<{ t: number; live: Record<string, Live>; flow: Record<string, number> }[]>([]);
+  const [framesLen, setFramesLen] = useState(0);
+  const [replay, setReplay] = useState<{ i: number; playing: boolean } | null>(null);
+  const monitor = useRef(new LiveMonitor());
+  const [crit, setCrit] = useState<Criterion[]>([]);
+  const [done, setDone] = useState<string[]>(loadDone);
+  const [lessonDialog, setLessonDialog] = useState(false);
+  const [simNow, setSimNow] = useState(0);
+  const partsRef = useRef(hist.present.parts);
+  partsRef.current = hist.present.parts;
+  const probesRef = useRef(hist.present.probes ?? []);
+  probesRef.current = hist.present.probes ?? [];
   const [problem, setProblem] = useState<Problem | null>(null);
   const [seconds, setSeconds] = useState(0);
   const [notice, setNotice] = useState('');
@@ -182,6 +202,7 @@ export default function App() {
 
   const stop = useCallback(() => {
     sim.current = null;
+    setFramesLen(frames.current.length);
     setRunning(false);
     setLive({});
     setFlow({});
@@ -195,8 +216,15 @@ export default function App() {
     setProblem(null);
     setSerial(EMPTY_LOG);
     simMs.current = 0;
+    recorder.current.clear();
+    setSimNow(0);
     try {
-      sim.current = new Simulator(project.parts, project.wires, project.code);
+      const run = applyFaults(project.parts, project.wires, project.faults);
+      sim.current = new Simulator(run.parts, run.wires, project.code);
+      frames.current = [];
+      monitor.current.clear();
+      setReplay(null);
+      setFramesLen(0);
     } catch (e) {
       const line = e instanceof CompileError ? e.line : 1;
       setProblem({ kind: 'build', line, message: (e as Error).message });
@@ -210,7 +238,7 @@ export default function App() {
   // The simulation clock: one step per animation frame.
   useEffect(() => {
     if (!running) return;
-    let raf = 0, last = performance.now(), shown = '', lastSecond = -1;
+    let raf = 0, last = performance.now(), shown = '', lastSecond = -1, tick = 0;
     const frame = (now: number) => {
       const s = sim.current;
       if (!s) return;
@@ -218,6 +246,16 @@ export default function App() {
       const f = s.step(Math.min(50, now - last) * getSettings().sim.speed);
       simMs.current = f.ms;
       last = now;
+      // Probes record every frame; the graph redraws a few times a second.
+      const pr = probesRef.current;
+      if (pr.length) {
+        for (const x of pr) recorder.current.push(x.id, f.ms, s.voltageAt(x.ref));
+        if (++tick % 3 === 0) setSimNow(f.ms);
+      }
+      // Recorded for replay and for checking challenges.
+      frames.current.push({ t: f.ms, live: f.live, flow: f.wires });
+      if (frames.current.length > 3600) frames.current.splice(0, 600);
+      monitor.current.push(f.ms, f.live, partsRef.current);
       const key = JSON.stringify(f.live) + JSON.stringify(f.wires) + f.notes.length;
       if (key !== shown) { shown = key; setLive(f.live); setNotes(f.notes); setFlow(f.wires); }
       if (f.serial) setSerial(log => appendSerial(log, f.serial, f.ms));
@@ -234,13 +272,14 @@ export default function App() {
   useEffect(() => { if (view !== 'build') stop(); }, [view, stop]);
 
   // Pressing a button or moving a slider while running changes the circuit.
-  useEffect(() => { if (running) sim.current?.setCircuit(project.parts, project.wires); }, [running, project.parts, project.wires]);
+  useEffect(() => { if (!running) return; const run = applyFaults(project.parts, project.wires, project.faults); sim.current?.setCircuit(run.parts, run.wires); }, [running, project.parts, project.wires, project.faults]);
 
   /** Open a project. A new one gets its own slot, so nothing you made is ever overwritten. */
   const open = (p: Project, id = projectId(), isNew = true) => {
     stop();
     setProblem(null);
     setSerial(EMPTY_LOG);
+    recorder.current.clear();
     setHist(fresh(p));
     setCurrentId(id);
     pristine.current = isNew ? p : null;
@@ -250,6 +289,89 @@ export default function App() {
     setView('build');
     if (panel === 'guide' && !p.starter) setPanel('code');
   };
+  // ---- replay ----
+  useEffect(() => {
+    if (!replay?.playing) return;
+    let raf = 0;
+    const t0 = performance.now(), i0 = replay.i, start = frames.current[i0]?.t ?? 0;
+    const tick = (now: number) => {
+      const target = start + (now - t0) * getSettings().sim.speed;
+      let i = i0;
+      while (i < frames.current.length - 1 && frames.current[i + 1].t <= target) i++;
+      if (i >= frames.current.length - 1) { setReplay({ i: frames.current.length - 1, playing: false }); return; }
+      setReplay(r => (r && r.i !== i ? { ...r, i } : r));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  // Restart only when play is pressed, not on every frame it advances.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [replay?.playing]);
+  const frame = replay ? frames.current[replay.i] : undefined;
+  const totalT = framesLen ? (frames.current[framesLen - 1]?.t ?? 0) / 1000 : 0;
+  const timeline = !running && framesLen > 10 ? (
+    <div className="flex h-9 shrink-0 items-center gap-2 border-t border-line bg-surface px-2">
+      <button className="btn btn-ghost btn-sm btn-icon" aria-label={replay?.playing ? 'Pause replay' : 'Play the last run'} data-tip={replay?.playing ? 'Pause' : 'Replay the last run'}
+        onClick={() => setReplay(r => (r?.playing ? { ...r, playing: false } : { i: !r || r.i >= framesLen - 1 ? 0 : r.i, playing: true }))}>
+        {replay?.playing ? <Pause size={14} /> : <Play size={14} />}
+      </button>
+      <span className="shrink-0 text-[12px] font-semibold">Replay</span>
+      <input type="range" className="min-w-0 flex-1" min={0} max={framesLen - 1} value={replay?.i ?? framesLen - 1} aria-label="Scrub through the last run"
+        onChange={e => setReplay({ i: +e.target.value, playing: false })} />
+      <span className="shrink-0 font-mono text-[11px] text-fg-2 tabular-nums">{((frame?.t ?? frames.current[framesLen - 1]?.t ?? 0) / 1000).toFixed(2)} / {totalT.toFixed(2)} s</span>
+      {replay
+        ? <button className="btn btn-sm shrink-0" onClick={() => setReplay(null)}>Back to editing</button>
+        : <button className="btn btn-ghost btn-sm btn-icon shrink-0" onClick={() => { frames.current = []; setFramesLen(0); }} aria-label="Discard the recording" data-tip="Discard recording" data-tip-pos="left"><X size={13} /></button>}
+    </div>
+  ) : null;
+  useEffect(() => { if (running) setReplay(null); }, [running]);
+
+  // ---- challenges ----
+  const challenge = CHALLENGES.find(c => c.id === project.challenge);
+  const projectRef = useRef(project);
+  projectRef.current = project;
+  useEffect(() => {
+    if (!challenge) { setCrit([]); return; }
+    const evaluate = () => {
+      const res = challenge.check({ project: projectRef.current, s: monitor.current.samples, running });
+      setCrit(prev => {
+        // Goals already met stay ticked after you stop, so a finished run still counts.
+        const merged = res.map((r, i) => (!running && prev[i]?.ok && prev[i].label === r.label ? { ...r, ok: true, detail: prev[i].detail } : r));
+        return JSON.stringify(merged) === JSON.stringify(prev) ? prev : merged;
+      });
+      if (running && res.length && res.every(r => r.ok)) {
+        setDone(d => {
+          if (d.includes(challenge.id)) return d;
+          const next = [...d, challenge.id];
+          saveDone(next);
+          setToast({ text: `Challenge complete: ${challenge.title}!` });
+          return next;
+        });
+      }
+    };
+    evaluate();
+    if (!running) return;
+    const t = setInterval(evaluate, 300);
+    return () => clearInterval(t);
+  }, [challenge, running, project]);
+  const openChallenge = (id: string) => {
+    const c = CHALLENGES.find(x => x.id === id);
+    if (!c) return;
+    open({ ...c.start(), challenge: c.id });
+    setCrit([]);
+    setPanel('challenge');
+  };
+  const nextChallenge = challenge ? CHALLENGES.find(c => !done.includes(c.id) && c.id !== challenge.id) ?? CHALLENGES[(CHALLENGES.indexOf(challenge) + 1) % CHALLENGES.length] : undefined;
+
+  // ---- troubleshooting ----
+  const hideFault = () => {
+    const f = randomFault(project);
+    if (!f) { setToast({ text: 'Add some parts and wires first, so there is something to break.' }); return; }
+    stop();
+    update(p => ({ ...p, faults: [f] }));
+    setToast({ text: 'A fault is hidden somewhere in this circuit. Run it, probe it, and find it.' });
+  };
+
   const openStarter = (id: string) => { const st = STARTERS.find(x => x.id === id); if (st) open({ ...st.build(), starter: st.id }); };
   const openSaved = (id: string) => {
     if (id === currentId) { setView('build'); return; }
@@ -305,6 +427,29 @@ export default function App() {
   };
 
   const explore = (t: PartType) => { setDiscover(t); setView('discover'); };
+
+  // Opened from a share link: load that project as a new copy.
+  const openRef = useRef(open);
+  openRef.current = open;
+  useEffect(() => {
+    const load = () => {
+      if (!location.hash.startsWith(SHARE_PREFIX)) return;
+      const token = location.hash.slice(SHARE_PREFIX.length);
+      history.replaceState(null, '', location.pathname + location.search);
+      decodeProject(token)
+        .then(data => {
+          if (!isProject(data)) throw new Error('not a project');
+          const p = tidy(data);
+          openRef.current(p);
+          setToast({ text: `Opened “${p.name}” from a share link. It’s your own copy now.` });
+        })
+        .catch(() => setNotice('That share link is broken or incomplete, so nothing was opened.'));
+    };
+    load();
+    // A link pasted into a tab that is already open only changes the hash.
+    window.addEventListener('hashchange', load);
+    return () => window.removeEventListener('hashchange', load);
+  }, []);
   /** Compile without running, like the Verify button in the Arduino IDE. */
   const verify = () => {
     try {
@@ -315,6 +460,16 @@ export default function App() {
     } catch (e) {
       setProblem({ kind: 'build', line: e instanceof CompileError ? e.line : 1, message: (e as Error).message });
       setPanel('code');
+    }
+  };
+  /** Copy a link that holds the whole project, compressed after the #. */
+  const share = async () => {
+    try {
+      const url = `${location.origin}${location.pathname}${SHARE_PREFIX}${await encodeProject(project)}`;
+      await navigator.clipboard.writeText(url);
+      setToast({ text: `Copied a share link to “${project.name}”. Anyone who opens it gets their own copy.` });
+    } catch {
+      setToast({ text: 'This browser couldn’t make a share link. Try Download instead.' });
     }
   };
   const sendSerial = (text: string) => {
@@ -378,6 +533,10 @@ export default function App() {
       { id: 'new', group: 'Project', label: 'New blank project', icon: <FilePlus size={14} />, run: () => open(blankProject()) },
       { id: 'open', group: 'Project', label: 'Open a project file', icon: <FolderOpen size={14} />, run: openFile },
       { id: 'download', group: 'Project', label: 'Download this project', icon: <Download size={14} />, run: download },
+      { id: 'fault', group: 'Classroom', label: 'Hide a fault (troubleshooting game)', keywords: 'broken find debug teacher', icon: <Bug size={14} />, run: hideFault },
+      { id: 'lesson', group: 'Classroom', label: 'Create a lesson link', keywords: 'teacher class share locked', icon: <GraduationCap size={14} />, run: () => setLessonDialog(true) },
+      ...CHALLENGES.map(c => ({ id: `ch-${c.id}`, group: 'Challenges', label: `${done.includes(c.id) ? '✓ ' : ''}${c.title}`, keywords: `challenge goal ${c.goal}`, icon: <Trophy size={14} />, run: () => openChallenge(c.id) })),
+      { id: 'share', group: 'Project', label: 'Copy a share link', keywords: 'url send link', icon: <Share2 size={14} />, run: () => void share() },
       { id: 'bom', group: 'Project', label: 'Parts list (Bill of Materials)', keywords: 'bom export csv components', icon: <ClipboardList size={14} />, run: () => setBom(true) },
       { id: 'keys', group: 'Help', label: 'Keyboard shortcuts', hint: '?', icon: <Keyboard size={14} />, run: () => setShortcuts(true) },
       { id: 'settings', group: 'Settings', label: 'Open settings', hint: 'Ctrl ,', keywords: 'preferences options', icon: <Settings size={14} />, run: () => setSettingsOpen('editor') },
@@ -453,12 +612,17 @@ export default function App() {
               { label: 'New blank project', icon: <FilePlus size={14} />, run: () => open(blankProject()) },
               { label: 'Open a project file', icon: <FolderOpen size={14} />, run: openFile },
               { label: 'Download this project', icon: <Download size={14} />, run: download },
+              { label: 'Copy a share link', icon: <Share2 size={14} />, run: () => void share() },
               { label: 'Parts list (BOM)', icon: <ClipboardList size={14} />, run: () => setBom(true) },
               { label: 'Verify the sketch', icon: <CircleCheck size={14} />, run: verify },
+              'divider',
+              { label: project.faults?.length ? 'Remove the hidden fault' : 'Hide a fault (troubleshooting game)', icon: <Bug size={14} />, run: () => (project.faults?.length ? update(p => ({ ...p, faults: undefined })) : hideFault()) },
+              { label: 'Create a lesson link…', icon: <GraduationCap size={14} />, run: () => setLessonDialog(true) },
               'divider',
               { label: 'Settings', icon: <Settings size={14} />, hint: 'Ctrl ,', run: () => setSettingsOpen('editor') },
               { label: 'Keyboard shortcuts', icon: <Keyboard size={14} />, hint: '?', run: () => setShortcuts(true) },
             ]} />
+            <button className="btn btn-ghost btn-sm hidden gap-1.5 xl:inline-flex" onClick={() => void share()} data-tip="Copy a link to this circuit"><Share2 size={14} /> Share</button>
             <button className="btn btn-ghost btn-icon" onClick={togglePanel} aria-pressed={!!panel} aria-label="Toggle side panel" data-tip="Side panel" data-tip-pos="left"><PanelRight size={15} /></button>
             <span className="divider-v hidden sm:block" />
             <Menu label="Simulation speed" trigger={<span className={`flex items-center gap-1 font-mono text-[11.5px] tabular-nums ${prefs.sim.speed !== 1 ? 'text-fg' : 'text-fg-2'}`}><Gauge size={14} />{prefs.sim.speed}×</span>}
@@ -488,13 +652,17 @@ export default function App() {
         {view === 'build' && (
           <div className="flex h-full min-h-0 flex-col lg:flex-row">
             <div className="min-h-0 min-w-0 flex-1">
-              <Workbench dark={theme === 'dark'} project={project} update={update} running={running} seconds={seconds} live={live} flow={flow} notes={notes}
+              <Workbench dark={theme === 'dark'} project={project} update={update} running={running || !!replay} seconds={frame ? frame.t / 1000 : seconds}
+                live={frame ? frame.live : live} flow={frame ? frame.flow : flow} notes={notes} timeline={timeline} replaying={!!replay} replayT={frame?.t ?? 0}
                 voltageAt={r => sim.current?.voltageAt(r) ?? 0} fitKey={fitKey}
                 canUndo={hist.past.length > 0} canRedo={hist.future.length > 0} onUndo={undo} onRedo={redo}
                 onLearn={explore} onToast={text => setToast({ text })} onShortcuts={() => setShortcuts(true)}
                 addRequest={addRequest}
                 guide={starter && panel !== 'guide' ? { done: tipsDone.length, total: starter.tryIt.length } : null}
-                onOpenGuide={() => setPanel('guide')} />
+                onOpenGuide={() => setPanel('guide')}
+                serialTab={<SerialPanel code={project.code} running={running} serial={serial} onClear={() => setSerial(EMPTY_LOG)} onSend={sendSerial} onToast={text => setToast({ text })} />}
+                serialCount={serial.lines.length}
+                recorder={recorder.current} simNow={simNow} onClearProbes={() => { recorder.current.clear(); setSimNow(t => t + 1e-9); }} />
             </div>
             {panel && (
               <>
@@ -507,10 +675,12 @@ export default function App() {
                 </div>
                 <div className="h-[46%] shrink-0 border-t border-line lg:h-auto lg:w-[var(--pw)] lg:border-t-0" style={{ '--pw': `${panelW}px` } as React.CSSProperties}>
                   <SidePanel tab={panel} setTab={setPanel} project={project} setCode={code => { update(p => ({ ...p, code }), { key: 'code' }); setProblem(null); }}
-                    running={running} boardName={board ? PARTS[board.type].name : null} problem={problem} serial={serial} onClearSerial={() => setSerial(EMPTY_LOG)}
-                    onSend={sendSerial} onVerify={verify} onSettings={sec => setSettingsOpen((sec as SettingsSection | undefined) ?? 'editor')} onToast={text => setToast({ text })} notes={notes} onClose={() => setPanel(null)}
+                    running={running} boardName={board ? PARTS[board.type].name : null} problem={problem}
+                    onVerify={verify} onSettings={sec => setSettingsOpen((sec as SettingsSection | undefined) ?? 'editor')} onToast={text => setToast({ text })} notes={notes} onClose={() => setPanel(null)}
                     starter={starter} tipsDone={tipsDone} onToggleTip={i => setTipsDone(d => (d.includes(i) ? d.filter(x => x !== i) : [...d, i]))}
-                    onExplore={explore} />
+                    onExplore={explore}
+                    challenge={challenge ? { c: challenge, crit, done: done.includes(challenge.id), next: nextChallenge } : undefined}
+                    onNextChallenge={openChallenge} codeLocked={!!project.lesson?.lockCode} />
                 </div>
               </>
             )}
@@ -522,13 +692,14 @@ export default function App() {
           </Suspense>
         )}
         {view === 'home' && (
-          <Home dark={theme === 'dark'} saved={saved} currentId={currentId} onOpenSaved={openSaved} onDelete={removeSaved} onOpen={openStarter}
+          <Home dark={theme === 'dark'} challengesDone={done} onChallenge={openChallenge} saved={saved} currentId={currentId} onOpenSaved={openSaved} onDelete={removeSaved} onOpen={openStarter}
             onBlank={() => open(blankProject())} onDiscover={() => setView('discover')} />
         )}
       </main>
 
       {palette && <CommandPalette commands={buildCommands()} onClose={() => setPalette(false)} />}
       {shortcuts && <ShortcutsDialog onClose={() => setShortcuts(false)} />}
+      {lessonDialog && <LessonDialog project={project} onClose={() => setLessonDialog(false)} onDone={text => setToast({ text })} />}
       {settingsOpen && <SettingsDialog section={settingsOpen} theme={theme} onTheme={setTheme} onClose={() => setSettingsOpen(null)} />}
       {bom && <BomDialog project={project} onCopy={() => setToast({ text: 'Copied parts list as CSV' })} onClose={() => setBom(false)} />}
 
@@ -544,6 +715,55 @@ export default function App() {
 }
 
 /** Bill of Materials: every part in the circuit, grouped by component & value, with CSV copy. */
+/** Turn the open project into a lesson: instructions, locks and an optional hidden fault, shared as a link. */
+function LessonDialog({ project, onClose, onDone }: { project: Project; onClose: () => void; onDone: (text: string) => void }) {
+  const [title, setTitle] = useState(project.name);
+  const [text, setText] = useState('Read the circuit, then press Start. What happens, and why?');
+  const [lockParts, setLockParts] = useState(true);
+  const [lockWires, setLockWires] = useState(true);
+  const [lockCode, setLockCode] = useState(false);
+  const [fault, setFault] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const create = async () => {
+    setBusy(true);
+    try {
+      const f = fault ? randomFault(project) : null;
+      const lesson: Project = { ...project, name: title || project.name, lesson: { title: title || project.name, text, lockParts, lockWires, lockCode }, faults: f ? [f] : project.faults, challenge: undefined };
+      const url = `${location.origin}${location.pathname}${SHARE_PREFIX}${await encodeProject(lesson)}`;
+      await navigator.clipboard.writeText(url);
+      onDone('Copied the lesson link. Students who open it get their own copy, with your locks and instructions.');
+      onClose();
+    } catch {
+      onDone('This browser couldn’t copy the link.');
+    } finally { setBusy(false); }
+  };
+  const box = (label: string, hint: string, on: boolean, set: (v: boolean) => void) => (
+    <label className="flex items-start gap-2.5 rounded-lg border border-line px-3 py-2.5 hover:bg-surface-2">
+      <input type="checkbox" className="mt-0.5" checked={on} onChange={e => set(e.target.checked)} />
+      <span><span className="block text-[13px] font-medium">{label}</span><span className="block text-[12px] text-fg-3">{hint}</span></span>
+    </label>
+  );
+  return (
+    <Dialog title="Create a lesson link" onClose={onClose} width={520}>
+      <div className="space-y-3 p-4">
+        <p className="text-[12.5px] leading-relaxed text-fg-2">Students open the link and get this circuit with your instructions pinned on the bench. Nothing is uploaded: the whole lesson lives inside the link.</p>
+        <label className="block"><span className="label">Lesson title</span><input className="input mt-1" value={title} onChange={e => setTitle(e.target.value)} /></label>
+        <label className="block"><span className="label">Instructions</span><textarea className="input mt-1 h-24 resize-y py-2" value={text} onChange={e => setText(e.target.value)} /></label>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {box('Lock the parts', 'They can’t be moved, added or deleted.', lockParts, setLockParts)}
+          {box('Lock the wiring', 'Wires can’t be added or removed.', lockWires, setLockWires)}
+          {box('Lock the code', 'The sketch is read-only.', lockCode, setLockCode)}
+          {box('Hide a fault', 'A troubleshooting task: something is broken.', fault, setFault)}
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={() => void create()} disabled={busy}><GraduationCap size={14} /> Copy lesson link</button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
 function BomDialog({ project, onCopy, onClose }: { project: Project; onCopy: () => void; onClose: () => void }) {
   const refs = designators(project.parts);
   const groups = new Map<string, { name: string; value: string; refs: string[] }>();

@@ -644,6 +644,28 @@ function Ne555() {
   );
 }
 
+function CustomChip({ part }: { part: Part }) {
+  const names = String(part.props.pins ?? '').split(',').map(s => s.trim());
+  const label = (i: number) => (names[i] && names[i] !== `P${i + 1}` ? names[i] : String(i + 1));
+  const top = [7, 6, 5, 4], bottom = [0, 1, 2, 3];
+  return (
+    <>
+      {[0, 12, 24, 36].map(x => (
+        <g key={x}>
+          <rect x={x - 1.6} y={-1.5} width={3.2} height={5.5} rx={0.6} fill={METAL} />
+          <rect x={x - 1.6} y={20} width={3.2} height={5.5} rx={0.6} fill={METAL} />
+        </g>
+      ))}
+      <rect x={-6} y={3} width={48} height={18} rx={2} fill="url(#xl-chip)" />
+      <path d="M-6 8.5A3.5 3.5 0 0 1 -6 15.5Z" fill="#0b0c0e" />
+      <rect x={-4.5} y={3.8} width={45} height={16.4} rx={1.6} fill="none" stroke="#3b3f47" strokeWidth={0.5} strokeDasharray="1.2 1" />
+      {top.map((pi, i) => <text key={pi} x={i * 12} y={7.6} textAnchor="middle" style={txt(2.9, '#8b9099', 600)}>{label(pi).slice(0, 4)}</text>)}
+      {bottom.map((pi, i) => <text key={pi} x={i * 12} y={19.2} textAnchor="middle" style={txt(2.9, '#8b9099', 600)}>{label(pi).slice(0, 4)}</text>)}
+      <text x={19} y={13.9} textAnchor="middle" style={txt(5, '#d4d9e0', 700)}>{String(part.props.name || 'CUSTOM').slice(0, 10)}</text>
+    </>
+  );
+}
+
 const Plug = ({ x, y, angle }: { x: number; y: number; angle: number }) => (
   <g transform={`translate(${x} ${y}) rotate(${angle})`} pointerEvents="none">
     <rect x={-0.8} y={-0.9} width={3.6} height={1.8} rx={0.5} fill="#c9ced6" />
@@ -695,6 +717,7 @@ export const PartArt = memo(function PartArt({ part, live, running = false }: { 
     case 'multimeter': return <Multimeter part={part} live={live} />;
     case 'scope': return <Scope part={part} live={live} />;
     case 'ne555': return <Ne555 />;
+    case 'custom': return <CustomChip part={part} />;
   }
 });
 

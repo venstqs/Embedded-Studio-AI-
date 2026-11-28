@@ -1,9 +1,10 @@
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalDistributeCenter, AlignStartHorizontal, AlignStartVertical,
   AlignVerticalDistributeCenter, ArrowRight, Box, BoxSelect, Camera, ChevronDown, ChevronRight, CircleAlert, CircleCheck, ClipboardPaste, Copy, Download, FileCode,
   Grid2x2, Hand, Image as ImageIcon, Info, Keyboard, Lightbulb, Map as MapIcon, Maximize2, Minus, MousePointer2, MousePointerClick, Plus, Redo2, Rotate3d, RotateCw,
-  Scissors, Search, ShieldCheck, Tag, Trash2, TriangleAlert, Undo2, X, Zap,
+  Bug, CircuitBoard, Crosshair, Eye, GraduationCap, ListTree, Lock, LockOpen, Ruler, Shapes, Scissors, Search, ShieldCheck, Tag, Terminal, Trash2, TriangleAlert, Undo2, X, Zap,
 } from 'lucide-react';
 import type { Live, Note, Part, PartType, Project, Rot, Wire } from '../types';
 import { BOARDS, CAPACITORS, LED_COLORS, P, PARTS, PART_ORDER, designators, formatFarads, formatOhms, isBoard, makePart, MM_PER_UNIT, newId, parseSI, partBounds, partValue, pinPos, pivot, ref, wireGeom } from '../parts/catalog';
@@ -13,8 +14,16 @@ import { buildNets } from '../sim/nets';
 import { checkCircuit, netlist } from '../sim/check';
 import type { Issue } from '../sim/check';
 import type { ViewPreset } from './Bench3D';
+import { Count, Dock, ProbesPanel } from './Dock';
+import type { DockState, DockTabDef, ProbeRow } from './Dock';
+import { nextProbe } from '../sim/probes';
+import type { ProbeRecorder } from '../sim/probes';
 
 const Bench3D = lazy(() => import('./Bench3D'));
+const Schematic = lazy(() => import('./Schematic'));
+const PcbDialog = lazy(() => import('./PcbDialog'));
+import ChipEditor from './ChipEditor';
+import { FAULT_LABEL } from '../sim/faults';
 
 /** Change the project. `key` merges repeated edits (a drag, a slider) into one undo step; `skip` keeps it out of history. */
 export type Update = (fn: (p: Project) => Project, opt?: { key?: string; skip?: boolean }) => void;
@@ -45,6 +54,18 @@ interface Props {
   onOpenGuide: () => void;
   /** Dark theme, for the 3D bench. */
   dark: boolean;
+  /** The serial monitor, shown as a tab in the bottom dock, and how many lines it holds. */
+  serialTab: ReactNode;
+  serialCount: number;
+  /** Voltage history of every probe, and the simulated time now in milliseconds. */
+  recorder: ProbeRecorder;
+  simNow: number;
+  onClearProbes: () => void;
+  /** The replay bar, shown under the workplane after a run. */
+  timeline?: ReactNode;
+  /** Showing a recorded run: nothing can be edited, and readings come from the recording. */
+  replaying: boolean;
+  replayT: number;
 }
 
 interface View { x: number; y: number; k: number }
@@ -58,6 +79,8 @@ const VOLT_DIVS = [0.5, 1, 2, 5];
 const FLOW_PREF = 'xavierlabs_show_flow';
 const MAT_PREF = 'xavierlabs_show_mat';
 const LABEL_PREF = 'xavierlabs_show_labels';
+const DOCK_PREF = 'xavierlabs_dock';
+const DOCK_DEFAULT: DockState = { open: true, tab: 'serial', h: 230 };
 
 /** Amps as a short readable string. */
 function formatAmps(a: number) {
@@ -97,10 +120,11 @@ type Drag =
   | { kind: 'pan'; sx: number; sy: number; vx: number; vy: number }
   | { kind: 'press'; id: string }
   | { kind: 'marquee'; add: boolean; base: string[] }
+  | { kind: 'measure' }
   | null;
 
 export default function Workbench(props: Props) {
-  const { project, update, running, seconds, live, flow, notes, voltageAt, onLearn, fitKey, canUndo, canRedo, onUndo, onRedo, onToast, onShortcuts, addRequest, guide, onOpenGuide, dark } = props;
+  const { project, update, running, seconds, live, flow, notes, voltageAt, onLearn, fitKey, canUndo, canRedo, onUndo, onRedo, onToast, onShortcuts, addRequest, guide, onOpenGuide, dark, serialTab, serialCount, recorder, simNow, onClearProbes, timeline, replaying, replayT } = props;
   const { parts, wires } = project;
   const wrap = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -115,13 +139,26 @@ export default function Workbench(props: Props) {
   const [query, setQuery] = useState('');
   const [closed, setClosed] = useState<string[]>([]);
   const [hoverWire, setHoverWire] = useState<{ id: string; x: number; y: number } | null>(null);
-  const [issuesOpen, setIssuesOpen] = useState(true);
   const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
-  const [menu, setMenu] = useState<{ x: number; y: number; on: 'part' | 'wire' | 'canvas' } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; on: 'part' | 'wire' | 'canvas' | 'pin' } | null>(null);
   const [panel, setPanel] = useState<'check' | 'export' | null>(null);
-  const [tool, setTool] = useState<'select' | 'pan'>('select');
+  const [tool, setTool] = useState<'select' | 'pan' | 'probe' | 'measure'>('select');
+  const [measure, setMeasure] = useState<{ a: { x: number; y: number }; b: { x: number; y: number } } | null>(null);
+  const [leftTab, setLeftTab] = useState<'parts' | 'outline'>('parts');
+  const [outlineQ, setOutlineQ] = useState('');
+  const [outClosed, setOutClosed] = useState<string[]>([]);
+  const [dock, setDockState] = useState<DockState>(() => {
+    try { return { ...DOCK_DEFAULT, ...JSON.parse(localStorage.getItem(DOCK_PREF) ?? '{}') }; } catch { return DOCK_DEFAULT; }
+  });
+  const setDock = useCallback((d: DockState) => { setDockState(d); try { localStorage.setItem(DOCK_PREF, JSON.stringify(d)); } catch { /* ignore */ } }, []);
+  const openDock = useCallback((tab: string) => setDockState(d => { const n = { ...d, open: true, tab }; try { localStorage.setItem(DOCK_PREF, JSON.stringify(n)); } catch { /* ignore */ } return n; }), []);
+  useEffect(() => { if (tool !== 'measure') setMeasure(null); }, [tool]);
   const [space, setSpace] = useState(false);
-  const [mode, setMode] = useState<'2d' | '3d'>(() => { try { return localStorage.getItem(MODE_PREF) === '3d' ? '3d' : '2d'; } catch { return '2d'; } });
+  const [mode, setMode] = useState<'2d' | '3d' | 'sch'>(() => { try { const m = localStorage.getItem(MODE_PREF); return m === '3d' || m === 'sch' ? m : '2d'; } catch { return '2d'; } });
+  const [pcbOpen, setPcbOpen] = useState(false);
+  const [guessing, setGuessing] = useState(false);
+  const [hunt, setHunt] = useState<{ guesses: number; result: 'right' | 'revealed' | null }>({ guesses: 0, result: null });
+  const [lessonOpen, setLessonOpen] = useState(true);
   const [preset, setPreset] = useState<{ name: ViewPreset; n: number }>({ name: 'iso', n: 0 });
   const [showFlow, setShowFlow] = useState(() => { try { return localStorage.getItem(FLOW_PREF) !== '0'; } catch { return true; } });
   const [showMat, setShowMat] = useState(() => { try { return localStorage.getItem(MAT_PREF) !== '0'; } catch { return true; } });
@@ -139,6 +176,13 @@ export default function Workbench(props: Props) {
   const selIds = useMemo(() => (sel?.kind === 'parts' ? sel.ids : []), [sel]);
   const selSet = useMemo(() => new Set(selIds), [selIds]);
   const selectParts = useCallback((ids: string[]) => setSel(ids.length ? { kind: 'parts', ids } : null), []);
+  const probes = useMemo(() => project.probes ?? [], [project.probes]);
+  /** Locked parts can be selected and wired but not moved or deleted. */
+  const lesson = project.lesson;
+  const faults = project.faults ?? [];
+  const locked = useMemo(() => new Set(parts.filter(p => lesson?.lockParts || p.props.locked).map(p => p.id)), [parts, lesson]);
+  const wiresLocked = !!lesson?.lockWires;
+  useEffect(() => { setHunt({ guesses: 0, result: null }); setGuessing(false); }, [project.faults]);
 
   const pinMap = useMemo(() => {
     const m = new Map<string, { x: number; y: number; name: string; kind: string; part: Part }>();
@@ -188,7 +232,7 @@ export default function Workbench(props: Props) {
   const fitRef = useRef(fit);
   fitRef.current = fit;
   useLayoutEffect(() => { fitRef.current(); setSel(null); setWiring(null); setHoverWire(null); }, [fitKey]);
-  useEffect(() => { if (running) { setWiring(null); setIssuesOpen(true); setMenu(null); } }, [running]);
+  useEffect(() => { if (running) { setWiring(null); setMenu(null); } }, [running]);
   // Forget selected things that were removed (for example by undo).
   useEffect(() => {
     if (!sel) return;
@@ -200,19 +244,27 @@ export default function Workbench(props: Props) {
   // ---- editing ----
   const removeSel = useCallback(() => {
     if (!sel || running) return;
-    if (sel.kind === 'wire') update(p => ({ ...p, wires: p.wires.filter(w => w.id !== sel.id) }));
+    if (sel.kind === 'wire') { if (wiresLocked) { onToast('This lesson keeps the wiring as it is.'); return; } update(p => ({ ...p, wires: p.wires.filter(w => w.id !== sel.id) })); }
     else {
-      const gone = new Set(sel.ids);
+      const gone = new Set(sel.ids.filter(id => !locked.has(id)));
+      if (!gone.size) { onToast('Locked parts can’t be deleted. Unlock them first.'); return; }
+      if (gone.size < sel.ids.length) onToast('Kept the locked parts.');
       const owner = (r: string) => gone.has(r.slice(0, r.indexOf(':')));
-      update(p => ({ ...p, parts: p.parts.filter(x => !gone.has(x.id)), wires: p.wires.filter(w => !owner(w.from) && !owner(w.to)) }));
+      update(p => ({
+        ...p,
+        parts: p.parts.filter(x => !gone.has(x.id)),
+        wires: p.wires.filter(w => !owner(w.from) && !owner(w.to)),
+        probes: (p.probes ?? []).filter(x => !owner(x.ref)),
+      }));
     }
     setSel(null);
-  }, [sel, running, update]);
+  }, [sel, running, update, locked, onToast, wiresLocked]);
 
   /** Rotate one part in place, or a group of parts together around their middle. */
   const rotateSel = useCallback(() => {
     if (!selIds.length || running) return;
-    const chosen = parts.filter(p => selSet.has(p.id));
+    const chosen = parts.filter(p => selSet.has(p.id) && !locked.has(p.id));
+    if (!chosen.length) return;
     if (chosen.length === 1) {
       update(p => ({ ...p, parts: p.parts.map(x => (x.id === chosen[0].id ? { ...x, rot: ((x.rot + 90) % 360) as Rot } : x)) }));
       return;
@@ -221,7 +273,7 @@ export default function Workbench(props: Props) {
     const cx = snap(piv.reduce((s, q) => s + q.x, 0) / piv.length), cy = snap(piv.reduce((s, q) => s + q.y, 0) / piv.length);
     const next = new Map(piv.map(q => [q.id, { x: snap(cx - (q.y - cy) - q.px), y: snap(cy + (q.x - cx) - q.py) }]));
     update(p => ({ ...p, parts: p.parts.map(x => { const n = next.get(x.id); return n ? { ...x, ...n, rot: ((x.rot + 90) % 360) as Rot } : x; }) }));
-  }, [selIds, selSet, parts, running, update]);
+  }, [selIds, selSet, parts, running, update, locked]);
 
   /** The selected parts and the wires that run between them. Boards stay put: a project has one. */
   const gather = useCallback((): Clip | null => {
@@ -266,12 +318,12 @@ export default function Workbench(props: Props) {
 
   const nudge = useCallback((dx: number, dy: number) => {
     if (!selIds.length || running) return;
-    update(p => ({ ...p, parts: p.parts.map(x => (selSet.has(x.id) ? { ...x, x: x.x + dx, y: x.y + dy } : x)) }), { key: `nudge:${selIds.join(',')}` });
+    update(p => ({ ...p, parts: p.parts.map(x => (selSet.has(x.id) && !x.props.locked ? { ...x, x: x.x + dx, y: x.y + dy } : x)) }), { key: `nudge:${selIds.join(',')}` });
   }, [selIds, selSet, running, update]);
 
   /** Line up the selected parts by their outlines, or space them evenly, like a drawing program. */
   const align = useCallback((how: 'left' | 'cx' | 'right' | 'top' | 'cy' | 'bottom' | 'dx' | 'dy') => {
-    const chosen = parts.filter(p => selSet.has(p.id));
+    const chosen = parts.filter(p => selSet.has(p.id) && !locked.has(p.id));
     if (chosen.length < 2 || running) return;
     const b = new Map(chosen.map(p => [p.id, partBounds(p)]));
     const all = [...b.values()];
@@ -298,10 +350,42 @@ export default function Workbench(props: Props) {
       }
     }
     update(p => ({ ...p, parts: p.parts.map(x => { const m = move.get(x.id); return m ? { ...x, x: x.x + m.dx, y: x.y + m.dy } : x; }) }));
-  }, [parts, selSet, running, update]);
+  }, [parts, selSet, running, update, locked]);
 
   const setProp = (id: string, key: string, value: number | string, opt?: { key?: string; skip?: boolean }) =>
     update(p => ({ ...p, parts: p.parts.map(x => (x.id === id ? { ...x, props: { ...x.props, [key]: value } } : x)) }), opt);
+
+  /** The troubleshooting game: is this the broken part or wire? */
+  const guess = (id: string) => {
+    setGuessing(false);
+    const f = faults[0];
+    if (!f) return;
+    const name = refs.get(id) ?? (wires.some(w => w.id === id) ? 'That wire' : 'That part');
+    if (id === f.target) { setHunt(h => ({ ...h, result: 'right' })); onToast(`Found it! ${f.note}`); }
+    else { setHunt(h => ({ ...h, guesses: h.guesses + 1 })); onToast(`${name} works fine. Measure around it and try again.`); }
+  };
+  const fixFault = () => { update(p => ({ ...p, faults: undefined })); onToast('Fault repaired. The circuit works properly now.'); };
+
+  /** Clip a probe onto a pin, or take it off again. Works while the simulation runs. */
+  const toggleProbe = (r: string) => {
+    const existing = probes.find(x => x.ref === r);
+    if (existing) { update(p => ({ ...p, probes: (p.probes ?? []).filter(x => x.id !== existing.id) })); return; }
+    const { label, color } = nextProbe(probes);
+    update(p => ({ ...p, probes: [...(p.probes ?? []), { id: newId('pr'), ref: r, label, color }] }));
+    openDock('probes');
+  };
+  const removeProbe = (id: string) => update(p => ({ ...p, probes: (p.probes ?? []).filter(x => x.id !== id) }));
+  const toggleLock = (ids: string[]) => {
+    const lock = ids.some(id => !locked.has(id));
+    update(p => ({ ...p, parts: p.parts.map(x => (ids.includes(x.id) ? { ...x, props: { ...x.props, locked: lock ? 1 : 0 } } : x)) }));
+    onToast(lock ? `Locked ${ids.length === 1 ? 'in place' : `${ids.length} parts`}` : 'Unlocked');
+  };
+  /** Scroll the 2D view so a point is in the middle. */
+  const centerOn = (x: number, y: number) => {
+    if (mode === '3d') setMode('2d');
+    setView(v => ({ ...v, x: size.w / 2 - x * v.k, y: size.h / 2 - y * v.k }));
+  };
+  const centerOnPart = (part: Part) => { const b = partBounds(part); centerOn((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2); };
 
   /** Where a new part lands if dropped with its centre at `c`. */
   const dropAt = (type: PartType, c: { x: number; y: number }) => { const [px, py] = pivot(type); return { x: snap(c.x - px), y: snap(c.y - py) }; };
@@ -309,6 +393,7 @@ export default function Workbench(props: Props) {
   /** Add a part with its centre at `at` (world coordinates), or in the middle of the view. */
   const addPart = (type: PartType, at?: { x: number; y: number }) => {
     if (running) return;
+    if (lesson?.lockParts) { onToast('This lesson keeps the parts as they are.'); return; }
     const existing = parts.find(x => isBoard(x.type));
     if (isBoard(type) && existing) {
       // One board per project: swap it and drop wires to pins the new board lacks.
@@ -374,6 +459,7 @@ export default function Workbench(props: Props) {
     const from = wiring!;
     setWiring(null);
     if (from === to) return;
+    if (wiresLocked) { onToast('This lesson keeps the wiring as it is.'); return; }
     const a = pinMap.get(from), b = pinMap.get(to);
     if (!a || !b) return;
     const kind = (id: string, k: string) => (k === 'power' || /:(tp|bp)\d+$/.test(id) ? 'power' : k === 'ground' || /:(tn|bn)\d+$/.test(id) ? 'ground' : '');
@@ -410,6 +496,18 @@ export default function Workbench(props: Props) {
       drag.current = { kind: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y };
       return;
     }
+    if (guessing && t) {
+      const id = t.dataset.wire ?? t.dataset.part ?? (t.dataset.pin ? pinMap.get(t.dataset.pin)?.part.id : undefined);
+      if (id) { guess(id); return; }
+    }
+    if (replaying) { if (t?.dataset.part) selectParts([t.dataset.part]); return; }
+    if (tool === 'measure') {
+      const a = { x: snap(w.x), y: snap(w.y) };
+      setMeasure({ a, b: a });
+      drag.current = { kind: 'measure' };
+      return;
+    }
+    if (tool === 'probe' && t?.dataset.pin) { toggleProbe(t.dataset.pin); return; }
     if (wiring && magnet && (!t || !t.dataset.pin)) { finishWire(magnet); return; }
     if (!t) {
       setWiring(null);
@@ -419,7 +517,7 @@ export default function Workbench(props: Props) {
       setMarquee({ x0: w.x, y0: w.y, x1: w.x, y1: w.y });
       return;
     }
-    if (t.dataset.bend && !running) {
+    if (t.dataset.bend && !running && !wiresLocked) {
       const wire = wires.find(x => x.id === t.dataset.bend);
       const a = wire && pinMap.get(wire.from), b = wire && pinMap.get(wire.to);
       if (wire && a && b) {
@@ -449,8 +547,9 @@ export default function Workbench(props: Props) {
     // Dragging a part that is already selected moves the whole selection.
     const ids = selSet.has(part.id) ? selIds : [part.id];
     if (!selSet.has(part.id)) selectParts(ids);
-    const start = new Map(parts.filter(p => ids.includes(p.id)).map(p => [p.id, { x: p.x, y: p.y }]));
-    drag.current = { kind: 'parts', ids, start, ox: w.x, oy: w.y, key: `move:${++dragSeq.current}` };
+    const start = new Map(parts.filter(p => ids.includes(p.id) && !locked.has(p.id)).map(p => [p.id, { x: p.x, y: p.y }]));
+    if (!start.size) return;
+    drag.current = { kind: 'parts', ids: [...start.keys()], start, ox: w.x, oy: w.y, key: `move:${++dragSeq.current}` };
   };
 
   const onMove = (e: React.PointerEvent) => {
@@ -462,6 +561,7 @@ export default function Workbench(props: Props) {
     if (!d) return;
     if (d.kind === 'pan') setView(v => ({ ...v, x: d.vx + e.clientX - d.sx, y: d.vy + e.clientY - d.sy }));
     if (d.kind === 'marquee') setMarquee(m => (m ? { ...m, x1: w.x, y1: w.y } : m));
+    if (d.kind === 'measure') setMeasure(m => (m ? { ...m, b: { x: snap(w.x), y: snap(w.y) } } : m));
     if (d.kind === 'parts') {
       const dx = snap(w.x - d.ox), dy = snap(w.y - d.oy);
       update(p => {
@@ -503,10 +603,16 @@ export default function Workbench(props: Props) {
 
   const onContext = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (running) return;
     setWiring(null);
     const r = wrap.current!.getBoundingClientRect();
     const t = (e.target as Element).closest<SVGElement>('[data-wire],[data-part],[data-pin]');
+    menuPin.current = t?.dataset.pin ?? null;
+    if (running) {
+      // While running, the only thing to do from here is clip a probe on.
+      if (!menuPin.current) return;
+      setMenu({ x: Math.min(e.clientX - r.left, r.width - 230), y: Math.min(e.clientY - r.top, r.height - 80), on: 'pin' });
+      return;
+    }
     const partId = t?.dataset.part ?? (t?.dataset.pin ? pinMap.get(t.dataset.pin)?.part.id : undefined);
     let on: 'part' | 'wire' | 'canvas' = 'canvas';
     if (t?.dataset.wire) { setSel({ kind: 'wire', id: t.dataset.wire }); on = 'wire'; }
@@ -515,6 +621,7 @@ export default function Workbench(props: Props) {
     setMenu({ x: Math.min(e.clientX - r.left, r.width - 230), y: Math.min(e.clientY - r.top, r.height - 330), on });
   };
   const mouseAtMenu = useRef({ x: 0, y: 0 });
+  const menuPin = useRef<string | null>(null);
 
   const onOver = (e: React.PointerEvent) => {
     const el = e.target as SVGElement;
@@ -564,11 +671,13 @@ export default function Workbench(props: Props) {
       }
       if (e.altKey) return;
       if (e.key === ' ' && mode === '2d') { e.preventDefault(); setSpace(true); return; }
-      if (e.key === 'Escape') { setWiring(null); setSel(null); setMenu(null); setPanel(null); }
+      if (e.key === 'Escape') { setWiring(null); setSel(null); setMenu(null); setPanel(null); setMeasure(null); if (tool === 'measure' || tool === 'probe') setTool('select'); }
       if (e.key === 'Delete' || e.key === 'Backspace') removeSel();
       if (k === 'r') rotateSel();
       if (k === 'v') setTool('select');
       if (k === 'h') setTool('pan');
+      if (k === 'p' && mode === '2d') setTool(x => (x === 'probe' ? 'select' : 'probe'));
+      if (k === 'm' && mode === '2d') setTool(x => (x === 'measure' ? 'select' : 'measure'));
       if (k === 'f') fit();
       if (e.key.startsWith('Arrow') && selIds.length) {
         e.preventDefault();
@@ -580,7 +689,7 @@ export default function Workbench(props: Props) {
     window.addEventListener('keydown', onKey);
     window.addEventListener('keyup', onKeyUp);
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('keyup', onKeyUp); };
-  }, [removeSel, rotateSel, duplicateSel, copySel, cutSel, paste, selectAll, nudge, fit, selIds, mode]);
+  }, [removeSel, rotateSel, duplicateSel, copySel, cutSel, paste, selectAll, nudge, fit, selIds, mode, tool]);
 
   const zoomButton = (f: number) => zoomAt(size.w / 2, size.h / 2, f);
   const zoomReset = () => zoomAt(size.w / 2, size.h / 2, 1 / view.k);
@@ -620,9 +729,12 @@ export default function Workbench(props: Props) {
   const q = query.trim().toLowerCase();
   const matches = PART_ORDER.filter(t => !q || PARTS[t].name.toLowerCase().includes(q) || PARTS[t].blurb.toLowerCase().includes(q));
 
-  const hint = running
+  const hint = running && tool === 'probe' ? 'Probe tool: click any pin to clip a probe on while it runs. Readings are graphed in the Probes panel.'
+    : running
     ? (mode === '3d' ? 'Drag to orbit, right-drag to pan. Click buttons and switches to use them.' : 'Click buttons and switches. Hover a pin for its voltage, a wire for its current.')
     : mode === '3d' ? 'Drag to orbit, right-drag to pan, scroll to zoom. Click a part to inspect it.'
+    : tool === 'probe' ? 'Probe tool: click any pin or hole to clip a probe on, click it again to take it off. P or Esc to leave.'
+    : tool === 'measure' ? 'Measure tool: drag between two points. Distances snap to breadboard holes. M or Esc to leave.'
     : wiring ? 'Click a pin to finish the wire. It snaps to the nearest pin. Esc cancels.'
     : multi ? `${selIds.length} selected. Drag to move together, R rotates, arrows nudge, Ctrl C copies.`
     : selPart ? 'Drag to move. R rotates, arrows nudge, Delete removes. Shift-click adds to the selection.'
@@ -682,7 +794,11 @@ export default function Workbench(props: Props) {
 
   const focusIssue = (i: Issue) => {
     if (i.wire) setSel({ kind: 'wire', id: i.wire });
-    else if (i.parts.length) selectParts(i.parts);
+    else if (i.parts.length) {
+      selectParts(i.parts);
+      const pt = parts.find(x => x.id === i.parts[0]);
+      if (pt) centerOnPart(pt);
+    }
   };
 
   // ---- minimap ----
@@ -718,22 +834,139 @@ export default function Workbench(props: Props) {
     </div>
   );
 
+  // ---- bottom dock ----
+  const checkOn = dock.open && dock.tab === 'problems';
+  const problemCount = issueCount + notes.length;
+  const pinLabel = (r: string) => {
+    const pp = pinMap.get(r);
+    return pp ? `${refs.get(pp.part.id) ?? PARTS[pp.part.type].name} · ${pp.part.type === 'breadboard' ? r.split(':')[1] : pp.name.replace(/ \(.*\)$/, '')}` : r;
+  };
+  const probeRows: ProbeRow[] = probes.map(x => ({ id: x.id, label: x.label, color: x.color, name: pinLabel(x.ref) }));
+  const focusProbe = (id: string) => { const pr = probes.find(x => x.id === id); const pp = pr && pinMap.get(pr.ref); if (pp) { centerOn(pp.x, pp.y); selectParts([pp.part.id]); } };
+  const levelIcon = (l: Issue['level'] | 'run') => (l === 'error' ? <CircleAlert size={14} className="shrink-0 text-bad" /> : l === 'info' ? <Info size={14} className="shrink-0 text-fg-3" /> : <TriangleAlert size={14} className="shrink-0 text-warn" />);
+  const problemRow = (key: string, level: Issue['level'] | 'run', title: string, text: string, ids: string[], go: () => void) => (
+    <li key={key}>
+      <button onClick={go} className="flex w-full items-center gap-3 border-b border-line px-3 py-2 text-left text-[12.5px] hover:bg-surface-2">
+        {levelIcon(level)}
+        <span className="w-32 shrink-0 font-medium">{title}</span>
+        <span className="min-w-0 flex-1 truncate text-fg-2">{text}</span>
+        <span className="flex shrink-0 gap-1">{ids.slice(0, 3).map(id => <span key={id} className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[10.5px] text-fg-2">{refs.get(id) ?? '?'}</span>)}</span>
+      </button>
+    </li>
+  );
+  const problemsView = (
+    <div className="scroll min-h-0 flex-1 overflow-auto">
+      {running && notes.length > 0 && <p className="sticky top-0 border-b border-line bg-surface px-3 py-1 text-[11px] font-semibold text-fg-3">While running</p>}
+      <ul>{running && notes.map((n, i) => problemRow(`n${i}`, 'run', 'Simulation', n.text, [n.partId], () => { const pt = parts.find(x => x.id === n.partId); if (pt) { selectParts([pt.id]); centerOnPart(pt); } }))}</ul>
+      {issues.length > 0 && <p className="sticky top-0 border-b border-line bg-surface px-3 py-1 text-[11px] font-semibold text-fg-3">Circuit check</p>}
+      <ul>{issues.map((i, n) => problemRow(`i${n}`, i.level, i.title, i.text, i.parts, () => focusIssue(i)))}</ul>
+      {!issues.length && !(running && notes.length) && (
+        <p className="flex items-center gap-2 px-3 py-4 text-[12.5px] text-fg-2"><CircleCheck size={15} className="text-ok" />No shorts, loose legs or backwards parts found. The circuit is checked as you build.</p>
+      )}
+    </div>
+  );
+  const dockTabs: DockTabDef[] = [
+    { id: 'serial', label: 'Serial monitor', icon: <Terminal size={13} />, badge: <Count n={serialCount} />, content: serialTab },
+    { id: 'probes', label: 'Probes', icon: <Crosshair size={13} />, badge: <Count n={probes.length} />, content: <ProbesPanel probes={probeRows} recorder={recorder} now={simNow} running={running} onRemove={removeProbe} onClear={onClearProbes} onFocus={focusProbe} /> },
+    { id: 'problems', label: 'Problems', icon: <TriangleAlert size={13} />, badge: <Count n={problemCount} tone={issues.some(i => i.level === 'error') ? 'bad' : 'warn'} />, content: problemsView },
+  ];
+
+  // ---- outliner ----
+  const oq = outlineQ.trim().toLowerCase();
+  const outParts = parts
+    .map(p => ({ p, tag: refs.get(p.id) ?? '', name: PARTS[p.type].name, val: p.type === 'resistor' || p.type === 'capacitor' ? partValue(p) : '' }))
+    .filter(x => !oq || `${x.tag} ${x.name} ${x.val}`.toLowerCase().includes(oq))
+    .sort((a, b) => a.tag.localeCompare(b.tag, undefined, { numeric: true }));
+  const pinShort = (r: string) => `${refs.get(r.slice(0, r.indexOf(':'))) ?? '?'}.${r.slice(r.indexOf(':') + 1)}`;
+  const outWires = wires.filter(w => !oq || `${pinShort(w.from)} ${pinShort(w.to)}`.toLowerCase().includes(oq));
+  const section = (id: string, title: string, n: number, body: ReactNode) => {
+    const shut = outClosed.includes(id);
+    return (
+      <div key={id} className="mb-1">
+        <button className="flex h-7 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-[11.5px] font-semibold text-fg-3 hover:text-fg-2"
+          onClick={() => setOutClosed(c => (c.includes(id) ? c.filter(x => x !== id) : [...c, id]))} aria-expanded={!shut}>
+          {shut ? <ChevronRight size={13} /> : <ChevronDown size={13} />}<span className="flex-1">{title}</span><span className="font-mono font-normal tabular-nums">{n}</span>
+        </button>
+        {!shut && body}
+      </div>
+    );
+  };
+  const outliner = (
+    <div className="hidden min-h-0 flex-1 flex-col md:flex">
+      <div className="p-2.5">
+        <label className="relative block">
+          <span className="sr-only">Filter the outliner</span>
+          <Search size={14} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-fg-3" aria-hidden="true" />
+          <input className="input pl-8" placeholder="Filter by name or label" value={outlineQ} onChange={e => setOutlineQ(e.target.value)} />
+        </label>
+      </div>
+      <div className="scroll min-h-0 flex-1 overflow-auto px-2 pb-3" role="tree" aria-label="Circuit outline">
+        {section('parts', 'Components', outParts.length, outParts.map(({ p, tag, name, val }) => {
+          const on = selSet.has(p.id);
+          const lvl = issueParts.get(p.id);
+          return (
+            <div key={p.id} role="treeitem" aria-selected={on} tabIndex={0}
+              onClick={e => { if (e.shiftKey || e.ctrlKey || e.metaKey) selectParts(on ? selIds.filter(x => x !== p.id) : [...selIds, p.id]); else { selectParts([p.id]); centerOnPart(p); } }}
+              onKeyDown={e => { if (e.key === 'Enter') { selectParts([p.id]); centerOnPart(p); } }}
+              className={`group flex h-8 cursor-pointer items-center gap-2 rounded-md px-1.5 text-[12.5px] ${on ? 'bg-surface-3 text-fg' : 'text-fg-2 hover:bg-surface-2 hover:text-fg'}`}>
+              <span className="grid h-6 w-6 shrink-0 place-items-center rounded bg-surface-2"><PartThumb part={p} size={16} /></span>
+              <span className="w-11 shrink-0 font-mono text-[11.5px] font-medium text-fg">{tag}</span>
+              <span className="min-w-0 flex-1 truncate">{name}{val && <span className="text-fg-3"> · {val}</span>}</span>
+              {lvl && lvl !== 'info' && <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${lvl === 'error' ? 'bg-bad' : 'bg-warn'}`} aria-label="Has a problem" />}
+              <button className={`grid h-6 w-6 shrink-0 place-items-center rounded hover:bg-surface-3 ${locked.has(p.id) ? 'text-fg' : 'text-fg-3 opacity-0 group-hover:opacity-100 focus-visible:opacity-100'}`}
+                onClick={e => { e.stopPropagation(); toggleLock([p.id]); }} aria-label={locked.has(p.id) ? `Unlock ${tag}` : `Lock ${tag}`} data-tip={locked.has(p.id) ? 'Unlock' : 'Lock position'} data-tip-pos="left">
+                {locked.has(p.id) ? <Lock size={12} /> : <LockOpen size={12} />}
+              </button>
+            </div>
+          );
+        }))}
+        {section('wires', 'Wires', outWires.length, outWires.map(w => {
+          const on = sel?.kind === 'wire' && sel.id === w.id;
+          return (
+            <div key={w.id} role="treeitem" aria-selected={on} tabIndex={0} onClick={() => { setSel({ kind: 'wire', id: w.id }); const a = pinMap.get(w.from), b = pinMap.get(w.to); if (a && b) centerOn((a.x + b.x) / 2, (a.y + b.y) / 2); }}
+              className={`flex h-7 cursor-pointer items-center gap-2 rounded-md px-1.5 font-mono text-[11.5px] ${on ? 'bg-surface-3 text-fg' : 'text-fg-2 hover:bg-surface-2 hover:text-fg'}`}>
+              <span className="h-1.5 w-4 shrink-0 rounded-full" style={{ background: w.color, boxShadow: 'inset 0 0 0 1px rgb(0 0 0 / 0.2)' }} />
+              <span className="truncate">{pinShort(w.from)} <span className="text-fg-3">→</span> {pinShort(w.to)}</span>
+            </div>
+          );
+        }))}
+        {probes.length > 0 && section('probes', 'Probes', probes.length, probes.map(pr => (
+          <div key={pr.id} role="treeitem" aria-selected={false} tabIndex={0} onClick={() => focusProbe(pr.id)}
+            className="group flex h-7 cursor-pointer items-center gap-2 rounded-md px-1.5 text-[12px] text-fg-2 hover:bg-surface-2 hover:text-fg">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: pr.color }} />
+            <span className="font-mono font-semibold text-fg">{pr.label}</span>
+            <span className="min-w-0 flex-1 truncate text-fg-3">{pinLabel(pr.ref)}</span>
+            <button className="text-fg-3 opacity-0 group-hover:opacity-100 hover:text-bad" onClick={e => { e.stopPropagation(); removeProbe(pr.id); }} aria-label={`Remove ${pr.label}`}><X size={12} /></button>
+          </div>
+        )))}
+        {!parts.length && <p className="px-2 py-6 text-center text-[12.5px] text-fg-3">Nothing on the bench yet.</p>}
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex h-full min-h-0 flex-col md:flex-row">
       {/* ---------- Parts library ---------- */}
       <aside className="flex shrink-0 flex-col border-b border-line bg-surface md:w-[252px] md:border-r md:border-b-0" aria-label="Parts library">
-        <div className="hidden h-10 shrink-0 items-center justify-between border-b border-line px-3 md:flex">
-          <h2 className="text-[13px] font-semibold">Parts</h2>
-          <span className="text-[12px] text-fg-3 tabular-nums">{PART_ORDER.length}</span>
+        <div className="hidden h-10 shrink-0 items-center gap-2 border-b border-line px-2 md:flex">
+          <div className="seg w-full" role="tablist" aria-label="Left panel">
+            <button role="tab" className="flex-1" aria-selected={leftTab === 'parts'} aria-checked={leftTab === 'parts'} onClick={() => setLeftTab('parts')}>
+              <Shapes size={12} className="mr-1" />Parts
+            </button>
+            <button role="tab" className="flex-1" aria-selected={leftTab === 'outline'} aria-checked={leftTab === 'outline'} onClick={() => setLeftTab('outline')}>
+              <ListTree size={12} className="mr-1" />Outliner<span className="ml-1 font-mono text-[10px] text-fg-3">{parts.length}</span>
+            </button>
+          </div>
         </div>
-        <div className="hidden p-2.5 md:block">
+        {leftTab === 'outline' && outliner}
+        <div className={`p-2.5 ${leftTab === 'parts' ? 'hidden md:block' : 'hidden'}`}>
           <label className="relative block">
             <span className="sr-only">Search parts</span>
             <Search size={14} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-fg-3" aria-hidden="true" />
             <input className="input pl-8" placeholder="Search parts" value={query} onChange={e => setQuery(e.target.value)} />
           </label>
         </div>
-        <div className="scroll flex gap-1 overflow-auto p-2 md:block md:flex-1 md:px-2.5 md:pt-0 md:pb-3">
+        <div className={`scroll flex gap-1 overflow-auto p-2 md:flex-1 md:px-2.5 md:pt-0 md:pb-3 ${leftTab === 'parts' ? 'md:block' : 'md:hidden'}`}>
           {running && <p className="mb-2 hidden rounded-md border border-line bg-surface-2 px-2.5 py-2 text-[12px] text-fg-2 md:block">Stop the simulation to add or move parts.</p>}
           {GROUPS.map(g => {
             const list = matches.filter(t => PARTS[t].group === g);
@@ -769,16 +1002,20 @@ export default function Workbench(props: Props) {
 
       {/* ---------- Canvas column ---------- */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {pcbOpen && <Suspense fallback={null}><PcbDialog project={project} onClose={() => setPcbOpen(false)} onToast={onToast} /></Suspense>}
         {/* Toolbar */}
-        <div className="flex h-10 shrink-0 items-center gap-1 border-b border-line bg-surface px-2" role="toolbar" aria-label="Edit">
+        <div className="no-scrollbar flex h-10 shrink-0 items-center gap-1 overflow-x-auto overflow-y-hidden border-b border-line bg-surface px-2 [&>*]:shrink-0" role="toolbar" aria-label="Edit">
           <div className="seg mr-1" role="radiogroup" aria-label="View">
             <button role="radio" aria-checked={mode === '2d'} onClick={() => setMode('2d')} data-tip="Flat drawing, for building">2D</button>
+            <button role="radio" aria-checked={mode === 'sch'} onClick={() => { setMode('sch'); setWiring(null); setTool('select'); }} data-tip="Schematic, drawn with symbols">Schematic</button>
             <button role="radio" aria-checked={mode === '3d'} onClick={() => { setMode('3d'); setWiring(null); }} data-tip="See it built, in 3D">3D</button>
           </div>
           {mode === '2d' && (
             <>
               <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setTool('select')} aria-pressed={tool === 'select'} aria-label="Select tool" data-tip="Select  V"><MousePointer2 size={15} /></button>
               <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setTool('pan')} aria-pressed={tool === 'pan'} aria-label="Pan tool" data-tip="Pan  H (or hold Space)"><Hand size={15} /></button>
+              <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setTool(x => (x === 'probe' ? 'select' : 'probe'))} aria-pressed={tool === 'probe'} aria-label="Probe tool" data-tip="Probe a pin  P"><Crosshair size={15} /></button>
+              <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setTool(x => (x === 'measure' ? 'select' : 'measure'))} aria-pressed={tool === 'measure'} aria-label="Measure tool" data-tip="Measure  M"><Ruler size={15} /></button>
             </>
           )}
           <span className="divider-v mx-1" />
@@ -788,58 +1025,31 @@ export default function Workbench(props: Props) {
           <button className="btn btn-ghost btn-sm btn-icon" onClick={rotateSel} disabled={!can.sel} aria-label="Rotate" data-tip="Rotate  R"><RotateCw size={15} /></button>
           <button className="btn btn-ghost btn-sm btn-icon" onClick={duplicateSel} disabled={!can.sel || !gather()} aria-label="Duplicate" data-tip="Duplicate  Ctrl D"><Copy size={14} /></button>
           <button className="btn btn-ghost btn-sm btn-icon" onClick={removeSel} disabled={!sel || running} aria-label="Delete" data-tip="Delete  Del"><Trash2 size={15} /></button>
-          {(selPart || selWire || multi) && <span className="chip ml-1.5 hidden whitespace-nowrap sm:inline-flex">{multi ? `${selIds.length} parts` : selPart ? (refs.get(selPart.id) ?? PARTS[selPart.type].name) : 'Wire'}</span>}
+          {(selPart || selWire || multi) && <span className="chip ml-1.5 hidden whitespace-nowrap 2xl:inline-flex">{multi ? `${selIds.length} parts` : selPart ? (refs.get(selPart.id) ?? PARTS[selPart.type].name) : 'Wire'}</span>}
           <span className="flex-1" />
-          <div className="relative">
-            <button className="btn btn-ghost btn-sm" onClick={() => setPanel(p => (p === 'check' ? null : 'check'))} aria-expanded={panel === 'check'} data-tip="Check the circuit for mistakes">
-              {issueCount ? <TriangleAlert size={14} className={issues.some(i => i.level === 'error') ? 'text-bad' : 'text-warn'} aria-hidden="true" /> : <ShieldCheck size={14} className="text-ok" aria-hidden="true" />}
-              <span className="hidden lg:inline">Check</span>
-              {issueCount > 0 && <span className="font-mono text-[11px] tabular-nums">{issueCount}</span>}
-            </button>
-            {panel === 'check' && (
-              <div className="popover absolute top-9 right-0 z-30 w-[340px] overflow-hidden" role="dialog" aria-label="Circuit check">
-                <div className="flex h-10 items-center justify-between border-b border-line px-3">
-                  <h3 className="text-[13px] font-semibold">Circuit check</h3>
-                  <span className="text-[11.5px] text-fg-3">{issues.length ? `${issues.length} found` : 'All clear'}</span>
-                </div>
-                {issues.length ? (
-                  <ul className="scroll max-h-80 overflow-auto p-1">
-                    {issues.map((i, n) => (
-                      <li key={n}>
-                        <button className="flex w-full gap-2.5 rounded-md px-2 py-2 text-left hover:bg-surface-2" onClick={() => focusIssue(i)}>
-                          {i.level === 'error' ? <CircleAlert size={15} className="mt-0.5 shrink-0 text-bad" /> : i.level === 'warn' ? <TriangleAlert size={15} className="mt-0.5 shrink-0 text-warn" /> : <Info size={15} className="mt-0.5 shrink-0 text-fg-3" />}
-                          <span className="min-w-0">
-                            <span className="block text-[12.5px] font-semibold">{i.title}</span>
-                            <span className="block text-[12px] leading-relaxed text-fg-2">{i.text}</span>
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="flex items-center gap-2 px-3 py-4 text-[12.5px] text-fg-2"><CircleCheck size={15} className="text-ok" />No shorts, loose legs or backwards parts found.</p>
-                )}
-              </div>
-            )}
-          </div>
+          <button className="btn btn-ghost btn-sm" onClick={() => (checkOn ? setDock({ ...dock, open: false }) : openDock('problems'))} aria-pressed={checkOn} data-tip="Check the circuit for mistakes">
+            {issueCount ? <TriangleAlert size={14} className={issues.some(i => i.level === 'error') ? 'text-bad' : 'text-warn'} aria-hidden="true" /> : <ShieldCheck size={14} className="text-ok" aria-hidden="true" />}
+            <span className="hidden 2xl:inline">Check</span>
+            {issueCount > 0 && <span className="font-mono text-[11px] tabular-nums">{issueCount}</span>}
+          </button>
           {mode === '2d' ? (
             <>
               <button className="btn btn-ghost btn-sm" onClick={() => setShowMat(m => !m)} aria-pressed={showMat} data-tip="Anti-static reference mat">
-                <Grid2x2 size={14} aria-hidden="true" /> <span className="hidden xl:inline">Mat</span>
+                <Grid2x2 size={14} aria-hidden="true" /> <span className="hidden 2xl:inline">Mat</span>
               </button>
               <button className="btn btn-ghost btn-sm" onClick={() => setShowLabels(l => !l)} aria-pressed={showLabels} data-tip="Part designators and values">
-                <Tag size={14} aria-hidden="true" /> <span className="hidden xl:inline">Labels</span>
+                <Tag size={14} aria-hidden="true" /> <span className="hidden 2xl:inline">Labels</span>
               </button>
             </>
-          ) : (
+          ) : mode === '3d' ? (
             <div className="seg" role="group" aria-label="Camera">
               {(['iso', 'top', 'front'] as const).map(n => (
                 <button key={n} aria-checked={preset.name === n} role="radio" onClick={() => setPreset(p => ({ name: n, n: p.n + 1 }))}>{n === 'iso' ? 'Iso' : n === 'top' ? 'Top' : 'Front'}</button>
               ))}
             </div>
-          )}
+          ) : null}
           <button className="btn btn-ghost btn-sm" onClick={() => setShowFlow(f => !f)} aria-pressed={showFlow} data-tip="Show current flowing while running">
-            <Zap size={14} aria-hidden="true" /> <span className="hidden xl:inline">Current</span>
+            <Zap size={14} aria-hidden="true" /> <span className="hidden 2xl:inline">Current</span>
           </button>
           <div className="relative">
             <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setPanel(p => (p === 'export' ? null : 'export'))} aria-expanded={panel === 'export'} aria-label="Export" data-tip="Export" data-tip-pos="left"><Download size={15} /></button>
@@ -847,8 +1057,9 @@ export default function Workbench(props: Props) {
               <div className="popover absolute top-9 right-0 z-30 w-[244px] p-1" role="menu">
                 {mode === '3d'
                   ? menuItem('3D snapshot (PNG)', <Camera size={14} />, () => exportImage('png'))
-                  : <>{menuItem('Image (PNG)', <ImageIcon size={14} />, () => exportImage('png'), undefined, !parts.length)}{menuItem('Drawing (SVG)', <ImageIcon size={14} />, () => exportImage('svg'), undefined, !parts.length)}</>}
+                  : mode === 'sch' ? null : <>{menuItem('Image (PNG)', <ImageIcon size={14} />, () => exportImage('png'), undefined, !parts.length)}{menuItem('Drawing (SVG)', <ImageIcon size={14} />, () => exportImage('svg'), undefined, !parts.length)}</>}
                 {menuItem('SPICE netlist (.cir)', <FileCode size={14} />, exportNetlist, undefined, !parts.length)}
+                {menuItem('PCB layout (Gerber)…', <CircuitBoard size={14} />, () => { setPanel(null); setPcbOpen(true); }, undefined, !parts.length)}
               </div>
             )}
           </div>
@@ -865,11 +1076,11 @@ export default function Workbench(props: Props) {
 
         {/* Workplane */}
         <div ref={wrap} className="workplane relative min-h-0 flex-1 overflow-hidden"
-          style={mode === '3d' ? undefined : {
+          style={mode !== '2d' ? undefined : {
             backgroundImage: 'radial-gradient(circle, var(--grid) 1px, transparent 1.3px)',
             backgroundSize: `${dot}px ${dot}px`,
             backgroundPosition: `${view.x - dot / 2}px ${view.y - dot / 2}px`,
-            cursor: drag.current?.kind === 'pan' ? 'grabbing' : tool === 'pan' || space ? 'grab' : wiring ? 'crosshair' : 'default',
+            cursor: drag.current?.kind === 'pan' ? 'grabbing' : tool === 'pan' || space ? 'grab' : tool === 'measure' ? 'crosshair' : wiring ? 'crosshair' : 'default',
             boxShadow: ghost?.over ? 'inset 0 0 0 2px var(--fg-3)' : undefined,
           }}>
           {mode === '3d' ? (
@@ -878,6 +1089,13 @@ export default function Workbench(props: Props) {
                 onSelect={id => (id ? selectParts([id]) : setSel(null))}
                 onPress={(id, down) => setProp(id, 'pressed', down ? 1 : 0, { skip: true })}
                 onToggle={id => { const p = parts.find(x => x.id === id); if (p) setProp(id, 'pos', p.props.pos ? 0 : 1); }} />
+            </Suspense>
+          ) : mode === 'sch' ? (
+            <Suspense fallback={<p className="absolute inset-0 grid place-items-center text-fg-3">Drawing the schematic…</p>}>
+              <Schematic name={project.name} parts={parts} wires={wires} positions={project.schematic} selected={selIds} onSelect={ids => (ids.length ? selectParts(ids) : setSel(null))}
+                onMove={(id, x, y, key) => update(p => ({ ...p, schematic: { ...(p.schematic ?? {}), [id]: [x, y] } }), { key })}
+                onReset={() => update(p => ({ ...p, schematic: undefined }))}
+                running={running && !replaying} live={live} voltageAt={voltageAt} />
             </Suspense>
           ) : (
           <svg ref={svgRef} className="absolute inset-0 h-full w-full" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onPointerOver={onOver}
@@ -889,7 +1107,7 @@ export default function Workbench(props: Props) {
               {parts.map(part => {
                 const [cx, cy] = pivot(part.type);
                 const [x0, y0, x1, y1] = PARTS[part.type].box;
-                const lvl = panel === 'check' ? issueParts.get(part.id) : undefined;
+                const lvl = checkOn ? issueParts.get(part.id) : undefined;
                 return (
                   <g key={part.id} filter={part.type === 'breadboard' ? undefined : 'url(#xl-lift)'}>
                     <g data-part={part.id} transform={`translate(${part.x} ${part.y}) rotate(${part.rot} ${cx} ${cy})`}
@@ -901,6 +1119,16 @@ export default function Workbench(props: Props) {
                       )}
                       {lvl && (
                         <rect data-noexport="" x={x0 - 8} y={y0 - 8} width={x1 - x0 + 16} height={y1 - y0 + 16} rx={8} fill="none" style={{ stroke: lvl === 'error' ? 'var(--bad)' : lvl === 'warn' ? 'var(--warn)' : 'var(--fg-3)' }} strokeWidth={2 / view.k} pointerEvents="none" />
+                      )}
+                      {hunt.result && faults[0]?.target === part.id && (
+                        <rect data-noexport="" x={x0 - 10} y={y0 - 10} width={x1 - x0 + 20} height={y1 - y0 + 20} rx={8} fill="none" style={{ stroke: 'var(--bad)' }} strokeWidth={2.5 / view.k} strokeDasharray={`${6 / view.k} ${4 / view.k}`} pointerEvents="none" />
+                      )}
+                      {locked.has(part.id) && !lesson?.lockParts && (
+                        <g data-noexport="" transform={`translate(${x0 + 2} ${y0 + 2})`} pointerEvents="none">
+                          <circle r={7} style={{ fill: 'var(--pop)', stroke: 'var(--line-2)' }} strokeWidth={1} />
+                          <rect x={-3.2} y={-1} width={6.4} height={5} rx={1} style={{ fill: 'var(--fg-2)' }} />
+                          <path d="M-2 -1V-2.6a2 2 0 0 1 4 0V-1" fill="none" style={{ stroke: 'var(--fg-2)' }} strokeWidth={1.2} />
+                        </g>
                       )}
                       {noted.has(part.id) && (
                         <g data-noexport="" transform={`translate(${x1} ${y0})`} pointerEvents="none">
@@ -931,10 +1159,11 @@ export default function Workbench(props: Props) {
                 if (!a || !b) return null;
                 const g = wireGeom(a, b, w.bend);
                 const on = sel?.kind === 'wire' && sel.id === w.id;
-                const flagged = panel === 'check' && issues.some(i => i.wire === w.id);
+                const flagged = checkOn && issues.some(i => i.wire === w.id);
                 return (
                   <g key={w.id} data-wire={w.id} style={{ cursor: 'pointer' }}>
                     <path d={g.d} stroke="transparent" strokeWidth={12} fill="none" />
+                    {hunt.result && faults[0]?.target === w.id && <path data-noexport="" d={g.d} style={{ stroke: 'var(--bad)' }} strokeWidth={10} strokeOpacity={0.5} fill="none" strokeLinecap="round" />}
                     {flagged && <path data-noexport="" d={g.d} style={{ stroke: 'var(--warn)' }} strokeWidth={9} strokeOpacity={0.45} fill="none" strokeLinecap="round" />}
                     <WireArt a={a} b={b} bend={w.bend} color={w.color} selected={on} />
                     {on && !running && (
@@ -977,8 +1206,51 @@ export default function Workbench(props: Props) {
                 );
               })()}
 
+              {/* Probes: a ring on the pin and a flag with the live voltage */}
+              {probes.map(pr => {
+                const pp = pinMap.get(pr.ref);
+                if (!pp) return null;
+                let v: number | null = running && !replaying ? voltageAt(pr.ref) : null;
+                if (replaying) { const tr = recorder.get(pr.id); if (tr) { let j = -1; for (let i = 0; i < tr.t.length && tr.t[i] <= replayT; i++) j = i; v = j >= 0 ? tr.v[j] : null; } }
+                const text = v === null ? pr.label : `${pr.label}  ${v.toFixed(2)} V`;
+                const s = 1 / Math.max(0.75, Math.min(1.6, view.k));
+                return (
+                  <g key={pr.id} pointerEvents="none" transform={`translate(${pp.x} ${pp.y})`}>
+                    <circle r={4.6} fill="none" stroke={pr.color} strokeWidth={2} />
+                    <circle r={1.7} fill={pr.color} />
+                    <g transform={`scale(${s})`}>
+                      <path d="M3.5 -3.5L13 -15" stroke={pr.color} strokeWidth={1.4} />
+                      <rect x={12} y={-27} width={10 + text.length * 5.45} height={14} rx={4} style={{ fill: 'var(--pop)' }} stroke={pr.color} strokeWidth={1.2} />
+                      <text x={17} y={-17} style={{ fontSize: 9, fontWeight: 600, fontFamily: '"Geist Mono", monospace', fill: 'var(--fg)' }}>{text}</text>
+                    </g>
+                  </g>
+                );
+              })}
+
+              {/* Measure tool */}
+              {measure && (() => {
+                const { a, b } = measure;
+                const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
+                const k = 1 / view.k;
+                const mm = (u: number) => (Math.abs(u) * MM_PER_UNIT).toFixed(2);
+                return (
+                  <g data-noexport="" pointerEvents="none">
+                    {dx !== 0 && dy !== 0 && <path d={`M${a.x} ${a.y}H${b.x}V${b.y}`} fill="none" style={{ stroke: 'var(--fg-3)' }} strokeWidth={k} strokeDasharray={`${3 * k} ${3 * k}`} />}
+                    <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} style={{ stroke: 'var(--fg)' }} strokeWidth={1.6 * k} />
+                    {[a, b].map((q, i) => <circle key={i} cx={q.x} cy={q.y} r={3.5 * k} style={{ fill: 'var(--canvas)', stroke: 'var(--fg)' }} strokeWidth={1.4 * k} />)}
+                    {len > 0 && (
+                      <g transform={`translate(${(a.x + b.x) / 2} ${(a.y + b.y) / 2}) scale(${k})`}>
+                        <rect x={10} y={-32} width={138} height={34} rx={6} style={{ fill: 'var(--pop)', stroke: 'var(--line-2)' }} />
+                        <text x={18} y={-17} style={{ fontSize: 12, fontWeight: 650, fontFamily: '"Geist Mono", monospace', fill: 'var(--fg)' }}>{mm(len)} mm</text>
+                        <text x={18} y={-4} style={{ fontSize: 9.5, fontFamily: '"Geist Mono", monospace', fill: 'var(--fg-3)' }}>{`Δx ${mm(dx)} Δy ${mm(dy)} · ${(len / P).toFixed(len % P ? 1 : 0)} holes`}</text>
+                      </g>
+                    )}
+                  </g>
+                );
+              })()}
+
               {/* Pin targets sit on top so a wire can start anywhere */}
-              <g data-noexport="" style={{ cursor: running ? 'help' : 'crosshair' }}>
+              <g data-noexport="" style={{ cursor: tool === 'probe' ? 'cell' : running ? 'help' : 'crosshair' }}>
                 {[...pinMap].map(([r, p]) => <circle key={r} data-pin={r} cx={p.x} cy={p.y} r={5} fill="transparent" />)}
               </g>
               <g data-noexport="">
@@ -1007,7 +1279,7 @@ export default function Workbench(props: Props) {
               style={{ left: hoverPin.x * view.k + view.x, top: hoverPin.y * view.k + view.y - 12 }}>
               <span className="flex items-baseline gap-2 font-medium whitespace-nowrap">
                 {refs.get(hoverPin.part.id) ?? PARTS[hoverPin.part.type].name} · {hoverPin.name}
-                {running && <span className="font-mono text-fg">{voltageAt(hover!).toFixed(2)} V</span>}
+                {running && !replaying && <span className="font-mono text-fg">{voltageAt(hover!).toFixed(2)} V</span>}
               </span>
               <span className="block text-fg-3">{joinedText}</span>
             </div>
@@ -1039,6 +1311,49 @@ export default function Workbench(props: Props) {
             </div>
           )}
 
+          {lesson && mode !== 'sch' && (
+            <div className="popover absolute top-3 left-3 z-20 w-[320px] max-w-[calc(100%-1.5rem)] overflow-hidden">
+              <button className="flex w-full items-center gap-2 px-3 py-2.5 text-left" onClick={() => setLessonOpen(o => !o)} aria-expanded={lessonOpen}>
+                <GraduationCap size={15} className="shrink-0 text-fg-2" />
+                <span className="min-w-0 flex-1"><span className="block text-[10.5px] font-semibold text-fg-3 uppercase">Lesson</span><span className="block truncate text-[13px] font-semibold">{lesson.title}</span></span>
+                <ChevronDown size={14} className={`shrink-0 text-fg-3 transition-transform ${lessonOpen ? '' : '-rotate-90'}`} />
+              </button>
+              {lessonOpen && (
+                <div className="border-t border-line px-3 py-2.5">
+                  <p className="text-[12.5px] leading-relaxed whitespace-pre-wrap text-fg-2">{lesson.text}</p>
+                  <div className="mt-2.5 flex flex-wrap items-center gap-1">
+                    {lesson.lockParts && <span className="chip h-5 gap-1 text-[10.5px]"><Lock size={9} />parts</span>}
+                    {lesson.lockWires && <span className="chip h-5 gap-1 text-[10.5px]"><Lock size={9} />wires</span>}
+                    {lesson.lockCode && <span className="chip h-5 gap-1 text-[10.5px]"><Lock size={9} />code</span>}
+                    <span className="flex-1" />
+                    <button className="text-[11.5px] text-fg-3 hover:text-fg" onClick={() => { update(p => ({ ...p, lesson: undefined })); onToast('Lesson locks removed. It’s all yours to change.'); }}>Unlock</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {faults.length > 0 && mode !== 'sch' && (
+            <div className="popover absolute top-3 left-1/2 z-20 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 items-center gap-3 py-2 pr-2 pl-3 text-[12.5px]" role="status">
+              <Bug size={15} className={hunt.result ? 'shrink-0 text-ok' : 'shrink-0 text-warn'} />
+              {hunt.result ? (
+                <span className="min-w-0"><span className="font-semibold">{hunt.result === 'right' ? `Found in ${hunt.guesses + 1} ${hunt.guesses ? 'tries' : 'try'}! ` : `${FAULT_LABEL[faults[0].kind]}: `}</span><span className="text-fg-2">{faults[0].note}</span></span>
+              ) : guessing ? (
+                <span className="font-medium">Click the part or wire you think is broken.</span>
+              ) : (
+                <span className="min-w-0"><span className="font-semibold">Find the fault. </span><span className="text-fg-2">Something is broken. Run it, probe it, measure it.{hunt.guesses ? ` ${hunt.guesses} wrong so far.` : ''}</span></span>
+              )}
+              <span className="flex shrink-0 gap-1">
+                {hunt.result ? <button className="btn btn-sm btn-primary" onClick={fixFault}>Repair it</button>
+                  : guessing ? <button className="btn btn-sm" onClick={() => setGuessing(false)}>Cancel</button>
+                  : <>
+                    <button className="btn btn-sm btn-primary" onClick={() => { setGuessing(true); setTool('select'); }}>I found it</button>
+                    <button className="btn btn-sm btn-ghost" onClick={() => setHunt(h => ({ ...h, result: 'revealed' }))} data-tip="Give up and show the fault"><Eye size={13} /></button>
+                  </>}
+              </span>
+            </div>
+          )}
+
           {wiring && <div className="popover absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1.5 text-[12.5px] whitespace-nowrap">Click a pin to finish the wire <span className="kbd ml-2">Esc</span></div>}
 
           {/* Right-click menu */}
@@ -1049,6 +1364,8 @@ export default function Workbench(props: Props) {
                 {menuItem('Duplicate', <Copy size={14} />, duplicateSel, 'Ctrl D', !gather())}
                 {menuItem('Copy', <Copy size={14} />, () => copySel(), 'Ctrl C', !gather())}
                 {menuItem('Cut', <Scissors size={14} />, cutSel, 'Ctrl X', !gather())}
+                {menuPin.current && menuItem(probes.some(x => x.ref === menuPin.current) ? 'Remove probe' : 'Probe this pin', <Crosshair size={14} />, () => toggleProbe(menuPin.current!), 'P')}
+                {menuItem(selIds.some(id => !locked.has(id)) ? 'Lock position' : 'Unlock', selIds.some(id => !locked.has(id)) ? <Lock size={14} /> : <LockOpen size={14} />, () => toggleLock(selIds))}
                 {multi && <div className="border-t border-line px-1 pt-1 pb-0.5">{alignBar}</div>}
                 {selPart && <>
                   <div className="my-1 border-t border-line" />
@@ -1061,6 +1378,7 @@ export default function Workbench(props: Props) {
                 {selWire?.bend && menuItem('Straighten', <Minus size={14} />, () => update(p => ({ ...p, wires: p.wires.map(w => (w.id === selWire.id ? { ...w, bend: undefined } : w)) })))}
                 {menuItem('Delete wire', <Trash2 size={14} />, removeSel, 'Del')}
               </>}
+              {menu.on === 'pin' && menuPin.current && menuItem(probes.some(x => x.ref === menuPin.current) ? 'Remove probe' : 'Probe this pin', <Crosshair size={14} />, () => toggleProbe(menuPin.current!), 'P')}
               {menu.on === 'canvas' && <>
                 {menuItem('Paste here', <ClipboardPaste size={14} />, () => paste(mouseAtMenu.current), 'Ctrl V', !clip.current)}
                 {menuItem('Select all', <BoxSelect size={14} />, selectAll, 'Ctrl A', !parts.length)}
@@ -1068,6 +1386,7 @@ export default function Workbench(props: Props) {
                 {menuItem('Fit to screen', <Maximize2 size={14} />, fit, 'F')}
                 {menuItem(showMat ? 'Hide the mat' : 'Show the mat', <Grid2x2 size={14} />, () => setShowMat(m => !m))}
                 {menuItem(showMap ? 'Hide the minimap' : 'Show the minimap', <MapIcon size={14} />, () => setShowMap(m => !m))}
+                {menuItem('Measure', <Ruler size={14} />, () => setTool('measure'), 'M')}
                 {menuItem('View in 3D', <Rotate3d size={14} />, () => setMode('3d'))}
               </>}
             </div>
@@ -1111,30 +1430,14 @@ export default function Workbench(props: Props) {
             </div>
           )}
 
-          {/* Bottom left: issues while running, otherwise the guide chip */}
-          {running && notes.length > 0 ? (
-            <div className="popover absolute bottom-3 left-3 w-[360px] max-w-[calc(100%-1.5rem)] overflow-hidden" aria-live="polite">
-              <button className="flex h-9 w-full items-center gap-2 px-3 text-left text-[12.5px] font-semibold" onClick={() => setIssuesOpen(o => !o)} aria-expanded={issuesOpen}>
-                <TriangleAlert size={14} className="text-warn" aria-hidden="true" />
-                <span className="flex-1">{notes.length} {notes.length === 1 ? 'issue' : 'issues'} to check</span>
-                <ChevronDown size={14} className={`text-fg-3 transition-transform ${issuesOpen ? '' : '-rotate-90'}`} aria-hidden="true" />
-              </button>
-              {issuesOpen && (
-                <ul className="scroll max-h-56 overflow-auto border-t border-line">
-                  {notes.slice(0, 6).map((n, i) => (
-                    <li key={i} className="border-b border-line px-3 py-2 text-[12.5px] leading-relaxed text-fg-2 last:border-b-0">{n.text}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ) : guide && !wiring ? (
+          {guide && !wiring && (
             <button className="popover absolute bottom-3 left-3 flex h-9 items-center gap-2 px-3 text-[12.5px] font-medium hover:bg-surface-2" onClick={onOpenGuide}>
               <Lightbulb size={14} className="text-fg-2" aria-hidden="true" />
               Things to try
               <span className="font-mono text-[11.5px] text-fg-3">{guide.done}/{guide.total}</span>
               <ChevronRight size={14} className="text-fg-3" aria-hidden="true" />
             </button>
-          ) : null}
+          )}
 
           {selPart && !multi && (
             <Inspector key={selPart.id} part={selPart} designator={refs.get(selPart.id) ?? ''} running={running} live={live[selPart.id]} notes={notes.filter(n => n.partId === selPart.id)}
@@ -1180,23 +1483,28 @@ export default function Workbench(props: Props) {
           )}
         </div>
 
+        {timeline}
+        <Dock state={dock} setState={setDock} tabs={dockTabs} />
+
         {/* Status bar */}
         <div className="flex h-7 shrink-0 items-center gap-3 border-t border-line bg-surface px-3 text-[11.5px] text-fg-2">
           <span className="flex shrink-0 items-center gap-1.5 font-medium text-fg">
             <span className={`h-1.5 w-1.5 rounded-full ${running ? 'pulse-dot bg-ok' : 'bg-fg-3'}`} aria-hidden="true" />
-            {running ? <>Running <span className="font-mono text-fg-2 tabular-nums">{seconds.toFixed(1)} s</span></> : 'Ready'}
+            {replaying ? <>Replay <span className="font-mono text-fg-2 tabular-nums">{seconds.toFixed(1)} s</span></> : running ? <>Running <span className="font-mono text-fg-2 tabular-nums">{seconds.toFixed(1)} s</span></> : 'Ready'}
           </span>
           <span className="hidden shrink-0 sm:inline">{board ? PARTS[board.type].name : 'No board'}{board ? ` · ${BOARDS[board.type as 'uno' | 'esp32'].vcc} V logic` : ''}</span>
-          {running && notes.length > 0 && (
-            <button className="flex shrink-0 items-center gap-1 font-medium text-warn" onClick={() => setIssuesOpen(true)}>
-              <TriangleAlert size={12} aria-hidden="true" />{notes.length}
+          {problemCount > 0 && (
+            <button className="flex shrink-0 items-center gap-1 font-medium text-warn" onClick={() => openDock('problems')} data-tip="Problems" data-tip-pos="top">
+              <TriangleAlert size={12} aria-hidden="true" />{problemCount}
             </button>
           )}
+          {tool !== 'select' && mode === '2d' && <span className="chip h-5 shrink-0 text-[10.5px] capitalize">{tool} tool</span>}
           <span className="hidden min-w-0 flex-1 truncate text-fg-3 md:inline">{hint}</span>
           <span className="flex-1 md:hidden" />
           {mode === '2d' && <span ref={coordRef} className="hidden w-[150px] shrink-0 font-mono text-[11px] text-fg-3 tabular-nums lg:inline" />}
           <span className="hidden shrink-0 tabular-nums sm:inline">{parts.length} parts</span>
           <span className="hidden shrink-0 tabular-nums sm:inline">{wires.length} wires</span>
+          {probes.length > 0 && <button className="hidden shrink-0 items-center gap-1 tabular-nums hover:text-fg sm:flex" onClick={() => openDock('probes')}><Crosshair size={11} />{probes.length}</button>}
           <button className="flex shrink-0 items-center gap-1 rounded px-1 hover:text-fg" onClick={onShortcuts} data-tip="Keyboard shortcuts" data-tip-pos="top">
             <Keyboard size={13} aria-hidden="true" /><span className="sr-only">Keyboard shortcuts</span>
           </button>
@@ -1277,7 +1585,7 @@ function Inspector({ part, designator, running, live, notes, volts, setProp, onL
   const mode = String(part.props.mode || 'V');
 
   return (
-    <div className="popover absolute top-3 right-3 z-20 flex max-h-[calc(100%-1.5rem)] w-[288px] flex-col overflow-hidden">
+    <div className={`popover absolute top-3 right-3 z-20 flex max-h-[calc(100%-1.5rem)] flex-col overflow-hidden ${part.type === 'custom' ? 'w-[330px]' : 'w-[288px]'}`}>
       <div className="flex shrink-0 items-center gap-2.5 border-b border-line px-3 py-2.5">
         <span className="tile-art h-10 w-10 shrink-0"><PartThumb part={part} size={32} /></span>
         <div className="min-w-0 flex-1">
@@ -1385,6 +1693,7 @@ function Inspector({ part, designator, running, live, notes, volts, setProp, onL
             </p>
           </div>
         )}
+        {part.type === 'custom' && <ChipEditor part={part} running={running} setProp={setProp} />}
         {part.type === 'scope' && (
           <>
             <Row label="Time / div">

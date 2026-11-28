@@ -324,3 +324,6 @@ html[data-motion='off'] *, html[data-motion='off'] *::before, html[data-motion='
 .bento:hover { border-color: var(--line-2); }
 @media (prefers-reduced-motion: reduce) { .reveal, .hero-in { opacity: 1 !important; transform: none !important; } }
 html[data-motion='off'] .reveal, html[data-motion='off'] .hero-in { opacity: 1 !important; transform: none !important; }
+
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }

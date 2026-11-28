@@ -2,7 +2,7 @@ import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   Activity, ArrowRight, ArrowUpRight, Box, Cable, CircleAlert, Clock, Code, Cpu, Gauge, Info, Layers, MousePointer2, Play, Plus, Rotate3d,
-  ShieldCheck, Terminal, Trash2, TriangleAlert, Zap,
+  ShieldCheck, Terminal, Trash2, TriangleAlert, Trophy, Zap, Check,
 } from 'lucide-react';
 import { GithubMark, Logo } from './ui';
 import { XAVIERLABS } from '../brand';
@@ -10,6 +10,7 @@ import type { Live, PartType, Project } from '../types';
 import { PARTS, PART_ORDER, pivot, toWorld } from '../parts/catalog';
 import { PartArt, PartThumb } from '../parts/PartArt';
 import { STARTERS } from '../data/projects';
+import { CHALLENGES } from '../data/challenges';
 import type { Starter } from '../data/projects';
 import type { Saved } from '../App';
 
@@ -434,6 +435,8 @@ interface Props {
   saved: Saved[];
   currentId: string;
   dark: boolean;
+  challengesDone: string[];
+  onChallenge: (id: string) => void;
   onOpenSaved: (id: string) => void;
   onDelete: (id: string) => void;
   onOpen: (id: string) => void;
@@ -441,7 +444,7 @@ interface Props {
   onDiscover: () => void;
 }
 
-export default function Home({ saved, currentId, dark, onOpenSaved, onDelete, onOpen, onBlank, onDiscover }: Props) {
+export default function Home({ saved, currentId, dark, challengesDone, onChallenge, onOpenSaved, onDelete, onOpen, onBlank, onDiscover }: Props) {
   const [level, setLevel] = useState<Starter['level'] | 'all'>('all');
   const shownStarters = STARTERS.filter(s => level === 'all' || s.level === level);
   const iso = useMemo(() => STARTERS.find(s => s.id === 'ne555')?.build() ?? STARTERS[0].build(), []);
@@ -584,6 +587,39 @@ export default function Home({ saved, currentId, dark, onOpenSaved, onDelete, on
               </Reveal>
             ))}
           </ol>
+        </section>
+
+        {/* ---------- Challenges ---------- */}
+        <section className="pt-20" aria-labelledby="challenges">
+          <Reveal className="flex flex-wrap items-end gap-4">
+            <div className="min-w-0 flex-1">
+              <p className="eyebrow">Challenges</p>
+              <h2 id="challenges" className="mt-2 text-[28px] font-semibold tracking-[-0.03em]">Goals the simulator checks for you.</h2>
+              <p className="mt-1.5 text-[14px] text-fg-2">Each one sets a target, like a blink at exactly 2 Hz, and watches your running circuit until you hit it.</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="h-1.5 w-32 overflow-hidden rounded-full bg-surface-3"><div className="h-full rounded-full bg-ok" style={{ width: `${(challengesDone.filter(id => CHALLENGES.some(c => c.id === id)).length / CHALLENGES.length) * 100}%` }} /></div>
+              <span className="font-mono text-[12px] text-fg-2 tabular-nums">{challengesDone.filter(id => CHALLENGES.some(c => c.id === id)).length}/{CHALLENGES.length} done</span>
+            </div>
+          </Reveal>
+          <ul className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {CHALLENGES.map((c, i) => {
+              const ok = challengesDone.includes(c.id);
+              return (
+                <Reveal as="li" key={c.id} delay={(i % 4) * 50}>
+                  <button onClick={() => onChallenge(c.id)} className="group card flex h-full w-full flex-col p-4 text-left transition-all hover:-translate-y-0.5 hover:border-line-2 hover:shadow-xl">
+                    <div className="flex items-center justify-between">
+                      <span className={`grid h-8 w-8 place-items-center rounded-lg ${ok ? 'bg-inverse text-on-inverse' : 'border border-line-2 bg-surface-2 text-fg-2'}`}>{ok ? <Check size={15} /> : <Trophy size={14} />}</span>
+                      <span className="flex gap-0.5" aria-label={`Difficulty ${c.level} of 3`}>{[1, 2, 3].map(k => <span key={k} className={`h-1.5 w-3 rounded-full ${k <= c.level ? 'bg-fg' : 'bg-line-2'}`} />)}</span>
+                    </div>
+                    <h3 className="mt-4 text-[14px] font-semibold">{c.title}</h3>
+                    <p className="mt-1 flex-1 text-[12.5px] leading-relaxed text-fg-2">{c.goal}</p>
+                    <span className="mt-3 flex items-center gap-1 text-[12px] font-medium text-fg-3 group-hover:text-fg">{ok ? 'Done. Try it again' : 'Take the challenge'}<ArrowRight size={13} className="transition-transform group-hover:translate-x-0.5" /></span>
+                  </button>
+                </Reveal>
+              );
+            })}
+          </ul>
         </section>
 
         {/* ---------- Learning path ---------- */}
